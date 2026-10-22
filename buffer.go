@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
-	"unsafe"
 )
 
 // Pos is a position in the buffer. Col is a byte offset into the line.
@@ -33,9 +31,9 @@ type edit struct {
 	id            int
 }
 
-// Buffer holds the document as a slice of lines without terminators.
+// Buffer holds the document as lines without terminators.
 type Buffer struct {
-	lines   []string
+	lines   lineStore
 	undo    []edit
 	redo    []edit
 	version int // bumped on every change
@@ -47,46 +45,36 @@ type Buffer struct {
 
 func NewBuffer(text string) *Buffer {
 	b := &Buffer{}
-	b.SetText(text)
+	b.lines.init(text)
+	b.CRLF = b.lines.crlf
+	b.UseTabs = b.detectTabs()
 	return b
 }
 
-func (b *Buffer) SetText(text string) {
-	b.CRLF = strings.Contains(text, "\r\n")
-	if b.CRLF {
-		text = strings.ReplaceAll(text, "\r\n", "\n")
+func Load(path string) (*Buffer, error) {
+	data, err := readFile(path)
+	if err != nil {
+		return nil, err
 	}
-	b.lines = strings.Split(text, "\n")
-	b.undo, b.redo = nil, nil
-	b.saved = 0
-	b.UseTabs = detectTabs(b.lines)
+	return NewBuffer(data), nil
 }
 
-func detectTabs(lines []string) bool {
+// Poll takes in lines indexed in the background and reports whether the
+// file is still loading. Edits must wait until loading is done.
+func (b *Buffer) Poll() bool    { return b.lines.poll() }
+func (b *Buffer) Loading() bool { return b.lines.loading != nil }
+func (b *Buffer) LoadPct() int  { return b.lines.progressPct() }
+
+func (b *Buffer) detectTabs() bool {
 	tabs, spaces := 0, 0
-	for i, l := range lines {
-		if i > 5000 {
-			break
-		}
-		if strings.HasPrefix(l, "\t") {
+	for i := range min(b.LineCount(), 5000) {
+		if l := b.Line(i); strings.HasPrefix(l, "\t") {
 			tabs++
 		} else if strings.HasPrefix(l, "  ") {
 			spaces++
 		}
 	}
 	return tabs > spaces
-}
-
-func Load(path string) (*Buffer, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	if len(data) == 0 {
-		return NewBuffer(""), nil
-	}
-	// data is never written again, so share it instead of copying it.
-	return NewBuffer(unsafe.String(&data[0], len(data))), nil
 }
 
 // Save writes the buffer atomically via a temp file and rename.
@@ -105,11 +93,11 @@ func (b *Buffer) Save(path string) error {
 	}
 	defer os.Remove(tmp.Name())
 	w := bufio.NewWriterSize(tmp, 1<<20)
-	for i, l := range b.lines {
+	for i := range b.LineCount() {
 		if i > 0 {
 			w.WriteString(sep)
 		}
-		w.WriteString(l)
+		w.WriteString(b.Line(i))
 	}
 	if err := w.Flush(); err != nil {
 		tmp.Close()
@@ -138,12 +126,12 @@ func (b *Buffer) state() int {
 }
 
 func (b *Buffer) Dirty() bool       { return b.state() != b.saved }
-func (b *Buffer) LineCount() int    { return len(b.lines) }
-func (b *Buffer) Line(i int) string { return b.lines[i] }
+func (b *Buffer) LineCount() int    { return b.lines.count }
+func (b *Buffer) Line(i int) string { return b.lines.line(i) }
 
 func (b *Buffer) End() Pos {
-	n := len(b.lines) - 1
-	return Pos{n, len(b.lines[n])}
+	n := b.LineCount() - 1
+	return Pos{n, len(b.Line(n))}
 }
 
 // Clamp returns the nearest valid position to p.
@@ -151,31 +139,31 @@ func (b *Buffer) Clamp(p Pos) Pos {
 	if p.Line < 0 {
 		return Pos{}
 	}
-	if p.Line >= len(b.lines) {
+	if p.Line >= b.LineCount() {
 		return b.End()
 	}
-	p.Col = max(0, min(p.Col, len(b.lines[p.Line])))
+	p.Col = max(0, min(p.Col, len(b.Line(p.Line))))
 	return p
 }
 
 func (b *Buffer) Text(start, end Pos) string {
 	start, end = order(start, end)
 	if start.Line == end.Line {
-		return b.lines[start.Line][start.Col:end.Col]
+		return b.Line(start.Line)[start.Col:end.Col]
 	}
-	n := len(b.lines[start.Line]) - start.Col + end.Col
+	n := len(b.Line(start.Line)) - start.Col + end.Col
 	for i := start.Line + 1; i <= end.Line; i++ {
-		n += len(b.lines[i]) + 1
+		n += len(b.Line(i)) + 1
 	}
 	var sb strings.Builder
 	sb.Grow(n)
-	sb.WriteString(b.lines[start.Line][start.Col:])
+	sb.WriteString(b.Line(start.Line)[start.Col:])
 	for i := start.Line + 1; i < end.Line; i++ {
 		sb.WriteByte('\n')
-		sb.WriteString(b.lines[i])
+		sb.WriteString(b.Line(i))
 	}
 	sb.WriteByte('\n')
-	sb.WriteString(b.lines[end.Line][:end.Col])
+	sb.WriteString(b.Line(end.Line)[:end.Col])
 	return sb.String()
 }
 
@@ -189,19 +177,12 @@ func endOf(start Pos, s string) Pos {
 }
 
 func (b *Buffer) replace(start, end Pos, text string) Pos {
-	prefix := b.lines[start.Line][:start.Col]
-	suffix := b.lines[end.Line][end.Col:]
-	if !strings.Contains(text, "\n") {
-		b.lines[start.Line] = prefix + text + suffix
-		if end.Line > start.Line {
-			b.lines = slices.Delete(b.lines, start.Line+1, end.Line+1)
-		}
-	} else {
-		nl := strings.Split(text, "\n")
-		nl[0] = prefix + nl[0]
-		nl[len(nl)-1] += suffix
-		b.lines = slices.Replace(b.lines, start.Line, end.Line+1, nl...)
-	}
+	prefix := b.Line(start.Line)[:start.Col]
+	suffix := b.Line(end.Line)[end.Col:]
+	nl := strings.Split(text, "\n")
+	nl[0] = prefix + nl[0]
+	nl[len(nl)-1] += suffix
+	b.lines.replace(start.Line, end.Line, nl)
 	b.version++
 	return endOf(start, text)
 }
@@ -277,13 +258,13 @@ func (b *Buffer) Find(q string, from Pos, backward bool) (Pos, bool) {
 		return Pos{}, false
 	}
 	index := matcher(q)
-	n := len(b.lines)
+	n := b.LineCount()
 	for i := 0; i <= n; i++ {
 		li := (from.Line + i) % n
 		if backward {
 			li = ((from.Line-i)%n + n) % n
 		}
-		s := b.lines[li]
+		s := b.Line(li)
 		if backward {
 			lim := len(s)
 			if i == 0 {

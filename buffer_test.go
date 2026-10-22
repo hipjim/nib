@@ -3,11 +3,10 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-func bufText(b *Buffer) string { return strings.Join(b.lines, "\n") }
+func bufText(b *Buffer) string { return b.Text(Pos{}, b.End()) }
 
 func TestReplace(t *testing.T) {
 	b := NewBuffer("hello\nworld")
@@ -96,7 +95,7 @@ func TestSaveCRLF(t *testing.T) {
 		t.Fatal(err)
 	}
 	if b.LineCount() != 3 || b.Line(0) != "a" {
-		t.Fatalf("lines %q", b.lines)
+		t.Fatalf("lines %q", bufText(b))
 	}
 	b.Replace(Pos{1, 1}, Pos{1, 1}, "!", Pos{})
 	if err := b.Save(path); err != nil {

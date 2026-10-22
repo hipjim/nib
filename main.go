@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"gioui.org/app"
 	"gioui.org/font"
@@ -53,6 +54,9 @@ func main() {
 }
 
 func run(w *app.Window, path string) error {
+	// Let a truncated memory-mapped file panic instead of crashing; the
+	// editor recovers from it.
+	debug.SetPanicOnFault(true)
 	ed := NewEditor(path)
 	ed.SetTitle = func(t string) { w.Option(app.Title(t)) }
 	var ops op.Ops

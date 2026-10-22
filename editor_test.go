@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"gioui.org/io/key"
@@ -14,7 +13,7 @@ func newTestEditor(text string, cur Pos) *Editor {
 	return e
 }
 
-func content(e *Editor) string { return strings.Join(e.buf.lines, "\n") }
+func content(e *Editor) string { return e.buf.Text(Pos{}, e.buf.End()) }
 
 func TestNewlineIndent(t *testing.T) {
 	e := newTestEditor("\tif x {}", Pos{0, 7})

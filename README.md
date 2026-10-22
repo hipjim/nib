@@ -1,8 +1,13 @@
 # quod
 
 A small, fast, GPU-rendered text editor written in Go with [Gio](https://gioui.org).
-Runs on macOS, Linux and Windows. Only the lines on screen are drawn, so
-a 1-million-line file opens in ~70 ms and edits stay instant.
+Runs on macOS, Linux and Windows.
+
+- Only the lines on screen are drawn: a frame takes under 0.1 ms.
+- Large files are memory-mapped and indexed in the background, so the first
+  screen shows up right away: ~2 ms for 100 MB, ~20 ms for 2 GB.
+- Lines live in blocks of offsets into the file (4 bytes per line until edited),
+  so an edit touches one small block: ~30 µs even in a 22-million-line file.
 
 Text is set in [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (NL, no ligatures),
 embedded in the binary under the OFL (see `fonts/OFL.txt`).

@@ -136,6 +136,9 @@ func (e *Editor) open(path string) {
 }
 
 func (e *Editor) save(path string) {
+	if e.locked() {
+		return
+	}
 	path = expandHome(path)
 	if err := e.buf.Save(path); err != nil {
 		e.flash(err.Error(), true)
@@ -155,6 +158,15 @@ func expandHome(p string) string {
 }
 
 func (e *Editor) flash(s string, warn bool) { e.msg, e.msgWarn = s, warn }
+
+// locked reports whether edits must wait for the file to finish loading.
+func (e *Editor) locked() bool {
+	if e.buf.Loading() {
+		e.flash("still loading, editing is paused", true)
+		return true
+	}
+	return false
+}
 
 // ---- selection and movement ----
 
@@ -243,12 +255,18 @@ func (e *Editor) home(extend bool) {
 // ---- editing ----
 
 func (e *Editor) insert(s string) {
+	if e.locked() {
+		return
+	}
 	a, b, _ := e.sel()
 	p := e.buf.Replace(a, b, s, e.cursor)
 	e.moveTo(p, false)
 }
 
 func (e *Editor) deleteTo(p Pos) {
+	if e.locked() {
+		return
+	}
 	if _, _, ok := e.sel(); ok {
 		e.insert("")
 		return
@@ -321,6 +339,9 @@ func (e *Editor) replaceLines(first, last int, repl []string) {
 }
 
 func (e *Editor) indent(dir int) {
+	if e.locked() {
+		return
+	}
 	first, last := e.lineSpan()
 	unit := e.indentUnit()
 	var out []string
@@ -353,6 +374,9 @@ func (e *Editor) indent(dir int) {
 }
 
 func (e *Editor) deleteLines() {
+	if e.locked() {
+		return
+	}
 	first, last := e.lineSpan()
 	switch {
 	case last < e.buf.LineCount()-1:
@@ -367,6 +391,9 @@ func (e *Editor) deleteLines() {
 }
 
 func (e *Editor) duplicateLines() {
+	if e.locked() {
+		return
+	}
 	first, last := e.lineSpan()
 	block := e.buf.Text(Pos{first, 0}, Pos{last, len(e.buf.Line(last))})
 	e.buf.Replace(Pos{last, len(e.buf.Line(last))}, Pos{last, len(e.buf.Line(last))}, "\n"+block, e.cursor)
@@ -378,6 +405,9 @@ func (e *Editor) duplicateLines() {
 
 // moveLines moves the selected lines up (dir<0) or down (dir>0).
 func (e *Editor) moveLines(dir int) {
+	if e.locked() {
+		return
+	}
 	first, last := e.lineSpan()
 	if (dir < 0 && first == 0) || (dir > 0 && last == e.buf.LineCount()-1) {
 		return
@@ -397,6 +427,9 @@ func (e *Editor) moveLines(dir int) {
 }
 
 func (e *Editor) undo(redo bool) {
+	if e.locked() {
+		return
+	}
 	f := e.buf.Undo
 	if redo {
 		f = e.buf.Redo
@@ -446,6 +479,9 @@ func (e *Editor) paste(s string) {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	if e.prompt != promptNone {
 		e.setInput(e.input + strings.ReplaceAll(s, "\n", " "))
+		return
+	}
+	if e.locked() {
 		return
 	}
 	if _, _, ok := e.sel(); !ok && s == e.lineClip {
@@ -936,7 +972,22 @@ func (e *Editor) measure(gtx layout.Context) {
 	e.textOffY = (e.lineH - dims.Size.Y) / 2
 }
 
-func (e *Editor) Layout(gtx layout.Context) layout.Dimensions {
+func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
+	defer func() {
+		// A memory-mapped file that is truncated on disk faults on access.
+		if r := recover(); r != nil {
+			if err, ok := r.(error); !ok || !strings.Contains(err.Error(), "fault") {
+				panic(r)
+			}
+			e.buf = NewBuffer("")
+			e.cursor, e.anchor = Pos{}, Pos{}
+			e.flash("file changed on disk while open; reopen it", true)
+			gtx.Execute(op.InvalidateCmd{})
+		}
+	}()
+	if e.buf.Poll() {
+		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(30 * time.Millisecond)})
+	}
 	e.measure(gtx)
 	if !e.started {
 		e.started = true
@@ -1104,6 +1155,9 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	}
 	right := fmt.Sprintf("%d:%d  %s  %s  %d lines", e.cursor.Line+1,
 		visCol(e.buf.Line(e.cursor.Line), e.cursor.Col)+1, ind, eol, e.buf.LineCount())
+	if e.buf.Loading() {
+		right = fmt.Sprintf("loading %d%%  ", e.buf.LoadPct()) + right
+	}
 	if a, b, ok := e.sel(); ok {
 		if a.Line == b.Line {
 			right = fmt.Sprintf("(%d sel)  ", utf8.RuneCountInString(e.buf.Text(a, b))) + right
@@ -1129,8 +1183,9 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 		return
 	}
 
-	e.label(gtx, x, y, "quod", colAccent)
-	x += int(4 * cw)
+	const appName = "quod"
+	e.label(gtx, x, y, appName, colAccent)
+	x += int(float32(len(appName)+1) * cw)
 	name := "[scratch]"
 	if e.path != "" {
 		name = shortPath(e.path)
