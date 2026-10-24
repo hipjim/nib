@@ -24,7 +24,7 @@ cat > "$work/zed/config/settings.json" <<'JSON'
 JSON
 
 # Warm the file cache and both editors; the first launch is not counted.
-cat "$1" > /dev/null
+[ -f "$1" ] && cat "$1" > /dev/null
 "$work/bench" "$timeout" "$work/quod" "$1" > /dev/null
 "$work/bench" "$timeout" /Applications/Zed.app/Contents/MacOS/zed --user-data-dir "$work/zed" "$1" > /dev/null
 for i in $(seq "$runs"); do
