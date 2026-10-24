@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,12 +40,13 @@ type Buffer struct {
 	version int // bumped on every change
 	nextID  int
 	saved   int // state() at last load/save
+	edited  int // first line changed since the last TakeEdited
 	CRLF    bool
 	UseTabs bool
 }
 
 func NewBuffer(text string) *Buffer {
-	b := &Buffer{}
+	b := &Buffer{edited: math.MaxInt}
 	b.lines.init(text)
 	b.CRLF = b.lines.crlf
 	b.UseTabs = b.detectTabs()
@@ -125,6 +127,13 @@ func (b *Buffer) state() int {
 	return b.undo[len(b.undo)-1].id
 }
 
+// TakeEdited returns the first line changed since the last call, if any.
+func (b *Buffer) TakeEdited() (int, bool) {
+	l := b.edited
+	b.edited = math.MaxInt
+	return l, l != math.MaxInt
+}
+
 func (b *Buffer) Dirty() bool       { return b.state() != b.saved }
 func (b *Buffer) LineCount() int    { return b.lines.count }
 func (b *Buffer) Line(i int) string { return b.lines.line(i) }
@@ -184,6 +193,7 @@ func (b *Buffer) replace(start, end Pos, text string) Pos {
 	nl[len(nl)-1] += suffix
 	b.lines.replace(start.Line, end.Line, nl)
 	b.version++
+	b.edited = min(b.edited, start.Line)
 	return endOf(start, text)
 }
 

@@ -3,11 +3,19 @@
 A small, fast, GPU-rendered text editor written in Go with [Gio](https://gioui.org).
 Runs on macOS, Linux and Windows.
 
-- Only the lines on screen are drawn: a frame takes under 0.1 ms.
+- Only the lines on screen are drawn: a frame takes about 0.1–0.15 ms.
 - Large files are memory-mapped and indexed in the background, so the first
   screen shows up right away: ~2 ms for 100 MB, ~20 ms for 2 GB.
 - Lines live in blocks of offsets into the file (4 bytes per line until edited),
   so an edit touches one small block: ~30 µs even in a 22-million-line file.
+- Syntax highlighting only looks at the lines on screen, so it costs the same
+  in a 2 GB file as in a 2 KB one. The state of multi-line comments and
+  strings is saved every 1024 lines.
+
+Highlighting covers comments, strings, numbers and keywords for Go, C/C++, Rust,
+JavaScript/TypeScript, Java and friends, Python, shell, Ruby, SQL, Lua, CSS,
+JSON, YAML/TOML/INI and XML/HTML. Log files (`.log`) get dimmed timestamps and
+colored `ERROR` / `WARN` levels. Lines over 10 KB are left plain.
 
 Text is set in [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (NL, no ligatures),
 embedded in the binary under the OFL (see `fonts/OFL.txt`).
@@ -41,6 +49,7 @@ led to `ed`, `vi` and everything after.
 | `Alt↑` / `Alt↓` | move line up / down |
 | `Tab` / `⇧Tab` | indent / dedent (works on selections) |
 | `⌘=` / `⌘-` / `⌘0` | zoom in / out / reset |
+| `⌘⇧H` | syntax highlighting on / off |
 | `Esc` | clear selection, close prompt |
 
 Double-click selects a word, triple-click a line.

@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/png"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -13,7 +14,8 @@ import (
 	"gioui.org/unit"
 )
 
-// TestRender draws the editor offscreen. Set QUOD_SHOT=out.png to save it.
+// TestRender draws the editor offscreen. Set QUOD_SHOT=out.png to save it,
+// QUOD_FILE to pick the file and QUOD_LINE to put the cursor on a line.
 func TestRender(t *testing.T) {
 	out := os.Getenv("QUOD_SHOT")
 	if out == "" {
@@ -30,6 +32,9 @@ func TestRender(t *testing.T) {
 	e.focused = true
 	e.cursor = Pos{98, 12}
 	e.anchor = Pos{96, 2}
+	if n, err := strconv.Atoi(os.Getenv("QUOD_LINE")); err == nil {
+		e.cursor, e.anchor = Pos{n - 1, 0}, Pos{n - 1, 0}
+	}
 	e.followCursor = true
 	var ops op.Ops
 	now := time.Now()

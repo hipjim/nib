@@ -42,6 +42,19 @@ var (
 	colWarn     = rgb(0xff6b6b)
 )
 
+// Syntax colors, indexed by token class.
+var tokColors = [...]color.NRGBA{
+	tokPlain:   colText,
+	tokComment: rgb(0x5f6b7c),
+	tokString:  rgb(0x7fd4a6),
+	tokNumber:  rgb(0xd9b56c),
+	tokKeyword: rgb(0xf4f7fa),
+	tokTag:     rgb(0x86a6cc),
+	tokTime:    rgb(0x5f6b7c),
+	tokError:   colWarn,
+	tokWarn:    rgb(0xe8b84e),
+}
+
 func rgb(c uint32) color.NRGBA { return argb(0xff000000 | c) }
 func argb(c uint32) color.NRGBA {
 	return color.NRGBA{A: uint8(c >> 24), R: uint8(c >> 16), G: uint8(c >> 8), B: uint8(c)}
@@ -64,6 +77,8 @@ const blinkPeriod = 530 * time.Millisecond
 type Editor struct {
 	buf    *Buffer
 	path   string
+	hl     *highlighter
+	plain  bool // syntax highlighting turned off
 	cursor Pos
 	anchor Pos // selection is [anchor, cursor]; empty when equal
 	goal   int // visual column kept across vertical moves; -1 if unset
@@ -106,6 +121,7 @@ type Editor struct {
 func NewEditor(path string) *Editor {
 	e := &Editor{
 		buf:    NewBuffer(""),
+		hl:     newHighlighter(""),
 		goal:   -1,
 		shaper: text.NewShaper(text.NoSystemFonts(), text.WithCollection(fontCollection())),
 		font:   font.Font{Typeface: typeface},
@@ -130,7 +146,7 @@ func (e *Editor) open(path string) {
 	default:
 		e.flash(fmt.Sprintf("opened %d lines", b.LineCount()), false)
 	}
-	e.buf, e.path = b, path
+	e.buf, e.path, e.hl = b, path, newHighlighter(path)
 	e.cursor, e.anchor, e.goal = Pos{}, Pos{}, -1
 	e.scrollX, e.scrollY = 0, 0
 }
@@ -748,6 +764,11 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 			} else {
 				e.selectNext()
 			}
+		case "H":
+			if shift {
+				e.plain = !e.plain
+				e.flash("highlighting "+map[bool]string{false: "on", true: "off"}[e.plain], false)
+			}
 		case "K":
 			if shift {
 				e.deleteLines()
@@ -1089,6 +1110,18 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 		index = matcher(q)
 	}
 
+	if l, ok := e.buf.TakeEdited(); ok {
+		e.hl.edited(l)
+	}
+	lang := e.hl.lang
+	if e.plain {
+		lang = nil
+	}
+	st := 0
+	if lang != nil {
+		st = e.hl.stateAt(e.buf, first)
+	}
+
 	for i := first; i <= last; i++ {
 		y := i*lh - sy
 		line := e.buf.Line(i)
@@ -1117,7 +1150,10 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 			fill(gtx, image.Rect(xOf(c0), y, xOf(c1), y+lh), colSel)
 		}
 
-		if s := displaySlice(line, v0, v1); s != "" {
+		if lang != nil {
+			e.hl.spans, st = lang.scan(line, st, e.hl.spans[:0])
+			e.drawSpans(gtx, xOf, y, line, v0, v1, e.hl.spans)
+		} else if s := displaySlice(line, v0, v1); s != "" {
 			e.label(gtx, xOf(v0), y, s, colText)
 		}
 	}
@@ -1135,6 +1171,50 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 			fill(gtx, image.Rect(x, y+gtx.Dp(2), x+gtx.Dp(2), y+lh-gtx.Dp(2)), colAccent)
 		}
 	}
+}
+
+// drawSpans draws the part of line between visual columns v0 and v1, one
+// label per run of the same color. Spaces join the run before them.
+func (e *Editor) drawSpans(gtx layout.Context, xOf func(int) int, y int, line string, v0, v1 int, spans []span) {
+	var sb strings.Builder
+	runV, runCls := 0, tokPlain
+	flush := func() {
+		if sb.Len() > 0 {
+			e.labelFont(gtx, xOf(runV), y, sb.String(), tokColors[runCls], runCls == tokKeyword)
+			sb.Reset()
+		}
+	}
+	si, v := 0, 0
+	for i, r := range line {
+		if v >= v1 {
+			break
+		}
+		w := runeWidth(r, v)
+		if v+w > v0 {
+			if r == ' ' || r == '\t' {
+				if sb.Len() > 0 {
+					sb.WriteString(strings.Repeat(" ", min(v+w, v1)-max(v, v0)))
+				}
+			} else {
+				for si < len(spans) && spans[si].end <= i {
+					si++
+				}
+				c := tokPlain
+				if si < len(spans) && spans[si].start <= i {
+					c = spans[si].cls
+				}
+				if c != runCls {
+					flush()
+				}
+				if sb.Len() == 0 {
+					runV, runCls = v, c
+				}
+				sb.WriteRune(r)
+			}
+		}
+		v += w
+	}
+	flush()
 }
 
 func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
@@ -1240,13 +1320,21 @@ func (e *Editor) updateTitle() {
 }
 
 func (e *Editor) label(gtx layout.Context, x, y int, s string, c color.NRGBA) {
+	e.labelFont(gtx, x, y, s, c, false)
+}
+
+func (e *Editor) labelFont(gtx layout.Context, x, y int, s string, c color.NRGBA, bold bool) {
+	f := e.font
+	if bold {
+		f.Weight = font.Bold
+	}
 	defer op.Offset(image.Pt(x, y+e.textOffY)).Push(gtx.Ops).Pop()
 	m := op.Record(gtx.Ops)
 	paint.ColorOp{Color: c}.Add(gtx.Ops)
 	mat := m.Stop()
 	g := gtx
 	g.Constraints = layout.Constraints{Max: image.Pt(1<<20, e.lineH)}
-	widget.Label{MaxLines: 1}.Layout(g, e.shaper, e.font, e.size, s, mat)
+	widget.Label{MaxLines: 1}.Layout(g, e.shaper, f, e.size, s, mat)
 }
 
 func fill(gtx layout.Context, r image.Rectangle, c color.NRGBA) {
