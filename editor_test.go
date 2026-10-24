@@ -1,10 +1,15 @@
 package main
 
 import (
+	"math"
 	"os"
+	"strings"
 	"testing"
 
+	"gioui.org/f32"
 	"gioui.org/io/key"
+	"gioui.org/io/pointer"
+	"gioui.org/layout"
 )
 
 func newTestEditor(text string, cur Pos) *Editor {
@@ -147,5 +152,40 @@ func BenchmarkTypeInBig(b *testing.B) {
 	for b.Loop() {
 		e.insert("x")
 		e.newline()
+	}
+}
+
+func TestScrollbar(t *testing.T) {
+	// 3M lines: the bottom is over 100M px down, past float32 precision.
+	e := newTestEditor(strings.Repeat("x\n", 3_000_000), Pos{})
+	e.lineH, e.charW, e.viewH = 40, 10, 800
+	e.bar.trackH = 800
+	_, size, ok := e.thumb(800)
+	if !ok || size != e.lineH {
+		t.Fatalf("thumb size %d, want the minimum %d", size, e.lineH)
+	}
+	e.bar.thumbH = size
+
+	// Clicking the middle of the track jumps to the middle of the file.
+	e.barEvent(pointer.Event{Kind: pointer.Press, Position: f32.Pt(0, 400)})
+	e.barEvent(pointer.Event{Kind: pointer.Release})
+	if mid := e.maxScroll() / 2; math.Abs(e.scrollY-mid) > mid/100 {
+		t.Fatalf("scrollY %.0f, want about %.0f", e.scrollY, mid)
+	}
+	// Dragging past the end stops at the last line.
+	e.barEvent(pointer.Event{Kind: pointer.Press, Position: f32.Pt(0, 400)})
+	e.barEvent(pointer.Event{Kind: pointer.Drag, Position: f32.Pt(0, 5000)})
+	if e.scrollY != e.maxScroll() {
+		t.Fatalf("scrollY %.0f, want %.0f", e.scrollY, e.maxScroll())
+	}
+	// One wheel step near the bottom still moves, and maps to the right line.
+	e.scrollY -= 41
+	before := e.scrollY
+	e.pointer(layout.Context{}, pointer.Event{Kind: pointer.Scroll, Scroll: f32.Pt(0, 1)})
+	if e.scrollY != before+1 {
+		t.Fatalf("wheel step lost: %v -> %v", before, e.scrollY)
+	}
+	if got, want := e.posAt(f32.Pt(0, 0)).Line, int(e.scrollY)/e.lineH; got != want {
+		t.Fatalf("top line %d, want %d", got, want)
 	}
 }

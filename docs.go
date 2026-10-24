@@ -10,14 +10,15 @@ import (
 // A doc is an open file or folder listing with its own cursor, scroll
 // position and undo history. Files stay open in the background.
 type doc struct {
-	buf              *Buffer
-	path             string
-	hl               *highlighter
-	cursor           Pos
-	anchor           Pos // selection is [anchor, cursor]; empty when equal
-	goal             int // visual column kept across vertical moves; -1 if unset
-	scrollY, scrollX float32
-	dir              *dirView // set for a folder listing
+	buf     *Buffer
+	path    string
+	hl      *highlighter
+	cursor  Pos
+	anchor  Pos     // selection is [anchor, cursor]; empty when equal
+	goal    int     // visual column kept across vertical moves; -1 if unset
+	scrollY float64 // pixels; float32 is too coarse past ~16M px
+	scrollX float32
+	dir     *dirView // set for a folder listing
 }
 
 func newDoc(path string, b *Buffer) *doc {

@@ -84,6 +84,7 @@ type Editor struct {
 	info   bool // file properties panel shown
 
 	followCursor bool
+	bar          scrollbar
 
 	shaper   *text.Shaper
 	font     font.Font
@@ -648,6 +649,20 @@ func (e *Editor) events(gtx layout.Context) {
 
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
+			Target:  &e.bar,
+			Kinds:   pointer.Press | pointer.Drag | pointer.Release | pointer.Enter | pointer.Leave | pointer.Scroll,
+			ScrollY: pointer.ScrollRange{Min: math.MinInt32, Max: math.MaxInt32},
+		})
+		if !ok {
+			break
+		}
+		if pe, ok := ev.(pointer.Event); ok {
+			e.barEvent(pe)
+		}
+	}
+
+	for {
+		ev, ok := gtx.Event(pointer.Filter{
 			Target:  e,
 			Kinds:   pointer.Press | pointer.Drag | pointer.Release | pointer.Scroll,
 			ScrollX: pointer.ScrollRange{Min: math.MinInt32, Max: math.MaxInt32},
@@ -665,7 +680,7 @@ func (e *Editor) events(gtx layout.Context) {
 func (e *Editor) pointer(gtx layout.Context, ev pointer.Event) {
 	switch ev.Kind {
 	case pointer.Scroll:
-		e.scrollY += ev.Scroll.Y
+		e.scrollY += float64(ev.Scroll.Y)
 		e.scrollX += ev.Scroll.X
 	case pointer.Press:
 		if !ev.Buttons.Contain(pointer.ButtonPrimary) {
@@ -706,7 +721,7 @@ func (e *Editor) pointer(gtx layout.Context, ev pointer.Event) {
 }
 
 func (e *Editor) posAt(pt f32.Point) Pos {
-	l := int(math.Floor(float64((pt.Y + e.scrollY) / float32(e.lineH))))
+	l := int(math.Floor((float64(pt.Y) + e.scrollY) / float64(e.lineH)))
 	l = max(0, min(l, e.buf.LineCount()-1))
 	x := (pt.X - float32(e.textX) + e.scrollX) / e.charW
 	return Pos{l, colAt(e.buf.Line(l), x)}
@@ -854,7 +869,7 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 		if k.Name == key.NamePageUp {
 			rows = -rows
 		}
-		e.scrollY += float32(rows * e.lineH)
+		e.scrollY += float64(rows * e.lineH)
 		e.vertical(rows, shift)
 	case key.NameHome:
 		if m.Contain(key.ModShortcut) {
@@ -1067,6 +1082,7 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	key.InputHintOp{Tag: e, Hint: key.HintText}.Add(gtx.Ops)
 	e.drawText(gtx, size.X, textH, gutterW)
 	area.Pop()
+	e.drawScrollbar(gtx, image.Rect(size.X-gtx.Dp(12), 0, size.X, textH))
 
 	if e.prompt == promptFiles {
 		e.drawFinder(gtx, size.X, textH)
@@ -1079,17 +1095,17 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 }
 
 func (e *Editor) scrollIntoView() {
-	lh := float32(e.lineH)
-	maxY := float32(max(0, (e.buf.LineCount()-1)*e.lineH))
+	lh := float64(e.lineH)
+	maxY := e.maxScroll()
 	if e.followCursor {
 		e.followCursor = false
-		cy := float32(e.cursor.Line) * lh
-		margin := min(lh*3, float32(e.viewH)/3)
+		cy := float64(e.cursor.Line) * lh
+		margin := min(lh*3, float64(e.viewH)/3)
 		if cy < e.scrollY+margin {
 			e.scrollY = cy - margin
 		}
-		if cy+lh > e.scrollY+float32(e.viewH)-margin {
-			e.scrollY = cy + lh - float32(e.viewH) + margin
+		if cy+lh > e.scrollY+float64(e.viewH)-margin {
+			e.scrollY = cy + lh - float64(e.viewH) + margin
 		}
 		cx := float32(visCol(e.buf.Line(e.cursor.Line), e.cursor.Col)) * e.charW
 		mx := e.charW * 8
