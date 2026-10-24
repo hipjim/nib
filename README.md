@@ -45,6 +45,22 @@ led to `ed`, `vi` and everything after.
 
 Double-click selects a word, triple-click a line.
 
+## Compared to Zed
+
+Opening a file on an M4 Mac (Zed 1.25.2, language servers off; median of 3 runs,
+1 for 2 GB). "Ready" is when the editor stops using CPU after opening.
+
+| File | quod ready | Zed ready | quod CPU | Zed CPU | quod memory | Zed memory |
+| --- | --- | --- | --- | --- | --- | --- |
+| 3 MB text | ~1.3 s | ~2.3 s | 0.27 s | 1.1 s | 137 MB | 145 MB |
+| 9 MB C source | ~1.3 s | ~2.6 s | 0.34 s | 4.2 s | 182 MB | 349 MB |
+| 100 MB XML | ~0.3 s | ~2.5 s | 0.27 s | 3.3 s | 157 MB | 493 MB |
+| 2 GB XML | 1.3 s | 39.6 s | 1.4 s | 46 s | 288 MB | 6.3 GB |
+
+Zed also highlights syntax and tracks git, which quod does not, so part of its
+cost buys features. Ready times vary by about a second between runs. Reproduce
+with `bench/run.sh <file>` (macOS, needs Zed in `/Applications`).
+
 ## Tests
 
 ```sh
