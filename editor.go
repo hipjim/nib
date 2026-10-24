@@ -85,6 +85,14 @@ type Editor struct {
 
 	followCursor bool
 	bar          scrollbar
+	watch        watcher
+
+	quitArmed   bool // unsaved files: the next quit goes through
+	Quit        func()
+	sessionPath string
+	sessionAt   time.Time
+	sessionData []byte
+	keep        []place // last session's documents that are not open
 
 	shaper   *text.Shaper
 	font     font.Font
@@ -147,7 +155,7 @@ func (e *Editor) save(path string) {
 	if langFor(path) != e.hl.lang {
 		e.hl = newHighlighter(path)
 	}
-	e.path = path
+	e.path, e.stamp, e.conflict = path, statStamp(path), false
 	e.flash(fmt.Sprintf("wrote %d lines", e.buf.LineCount()), false)
 }
 
@@ -600,7 +608,7 @@ var navKeys = []key.Name{
 	key.NameTab, key.NameEscape, key.NameF3,
 }
 
-var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "G", "D", "K", "L", "H", "P", "I", "W", "E", "=", "+", "-", "0"}
+var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0"}
 
 func (e *Editor) filters() []event.Filter {
 	fs := []event.Filter{
@@ -625,12 +633,18 @@ func (e *Editor) events(gtx layout.Context) {
 		e.blinkStart = gtx.Now
 		switch ev := ev.(type) {
 		case key.FocusEvent:
+			if ev.Focus && !e.focused {
+				e.checkDisk()
+			}
 			e.focused = ev.Focus
 		case key.Event:
 			if ev.State == key.Press {
 				e.msg = ""
 				discard := e.discardOK
 				e.discardOK = false
+				if ev.Name != "Q" {
+					e.quitArmed = false
+				}
 				e.key(gtx, ev, discard)
 			}
 		case key.EditEvent:
@@ -751,6 +765,9 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 		case "S":
 			if e.path == "" || shift {
 				e.openPrompt(promptSaveAs, orDefault(e.path, dirPrefix(e.root)))
+			} else if e.conflict && !discardOK {
+				e.flash("file changed on disk · ⌘S again to overwrite it", true)
+				e.discardOK = true
 			} else {
 				e.save(e.path)
 			}
@@ -764,6 +781,10 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 			e.info = !e.info
 		case "W":
 			e.closeDoc(discardOK)
+		case "Q":
+			if e.Quit != nil {
+				e.Quit()
+			}
 		case "F":
 			q := e.findQuery
 			if a, b, ok := e.sel(); ok && a.Line == b.Line {
@@ -956,7 +977,7 @@ func (e *Editor) promptKey(k key.Event) bool {
 		}
 		e.prompt = promptNone
 		return false
-	case "A", "C", "X", "Z", "Y", "S", "O", "G", "D", "K", "L", "H", "P", "I", "W", "E", "=", "+", "-", "0":
+	case "A", "C", "X", "Z", "Y", "S", "O", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0":
 		// Any other shortcut closes the prompt and runs normally.
 		e.prompt = promptNone
 		return false
@@ -1042,6 +1063,12 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 			gtx.Execute(op.InvalidateCmd{})
 		}
 	}()
+	if quitAsked.Swap(false) {
+		e.askQuit()
+	}
+	if e.watch.hit.Swap(false) {
+		e.checkDisk()
+	}
 	if e.buf.Poll() {
 		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(30 * time.Millisecond)})
 	}
@@ -1060,6 +1087,7 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 		gtx.Execute(key.FocusCmd{Tag: e})
 	}
 	e.events(gtx)
+	e.applyPending()
 	e.cursor, e.anchor = e.buf.Clamp(e.cursor), e.buf.Clamp(e.anchor)
 	e.updateTitle()
 
@@ -1091,6 +1119,12 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	}
 
 	e.drawStatus(gtx, image.Rect(0, textH, size.X, size.Y))
+
+	quitOK.Store(e.unsaved() == 0 || e.quitArmed)
+	e.watch.sync(e.docs)
+	if e.saveSession(false) {
+		gtx.Execute(op.InvalidateCmd{At: e.sessionAt.Add(time.Second)})
+	}
 	return layout.Dimensions{Size: size}
 }
 

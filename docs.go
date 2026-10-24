@@ -10,15 +10,18 @@ import (
 // A doc is an open file or folder listing with its own cursor, scroll
 // position and undo history. Files stay open in the background.
 type doc struct {
-	buf     *Buffer
-	path    string
-	hl      *highlighter
-	cursor  Pos
-	anchor  Pos     // selection is [anchor, cursor]; empty when equal
-	goal    int     // visual column kept across vertical moves; -1 if unset
-	scrollY float64 // pixels; float32 is too coarse past ~16M px
-	scrollX float32
-	dir     *dirView // set for a folder listing
+	buf      *Buffer
+	path     string
+	hl       *highlighter
+	cursor   Pos
+	anchor   Pos     // selection is [anchor, cursor]; empty when equal
+	goal     int     // visual column kept across vertical moves; -1 if unset
+	scrollY  float64 // pixels; float32 is too coarse past ~16M px
+	scrollX  float32
+	dir      *dirView // set for a folder listing
+	stamp    stamp    // the file on disk when last read or written
+	conflict bool     // changed on disk while edited here
+	pending  *place   // cursor to restore once loading finishes
 }
 
 func newDoc(path string, b *Buffer) *doc {
@@ -64,17 +67,14 @@ func (e *Editor) open(path string) {
 	default:
 		e.flash(fmt.Sprintf("opened %d lines", b.LineCount()), false)
 	}
-	e.show(newDoc(path, b))
+	d := newDoc(path, b)
+	d.stamp = statStamp(path)
+	e.show(d)
 }
 
 // openDir shows the listing of a folder with the cursor on the entry named
 // focus, or the first one. There is one listing; it moves between folders.
 func (e *Editor) openDir(path, focus string) {
-	b, v, l, err := listDir(path)
-	if err != nil {
-		e.flash(err.Error(), true)
-		return
-	}
 	var d *doc
 	for _, x := range e.docs {
 		if x.dir != nil {
@@ -84,7 +84,19 @@ func (e *Editor) openDir(path, focus string) {
 	if d == nil {
 		d = &doc{goal: -1}
 	}
-	d.buf, d.path, d.dir = b, path, v
+	if e.fillDir(d, path, focus) {
+		e.show(d)
+	}
+}
+
+// fillDir puts the listing of path into d.
+func (e *Editor) fillDir(d *doc, path, focus string) bool {
+	b, v, l, err := listDir(path)
+	if err != nil {
+		e.flash(err.Error(), true)
+		return false
+	}
+	d.buf, d.path, d.dir, d.stamp = b, path, v, statStamp(path)
 	d.hl = &highlighter{lang: l, ck: []int{0}, guess: map[int]int{}}
 	d.cursor = Pos{dirHeader, 0}
 	if len(v.entries) > 1 && v.entries[0].name == ".." {
@@ -97,16 +109,18 @@ func (e *Editor) openDir(path, focus string) {
 	}
 	d.anchor, d.goal = d.cursor, -1
 	d.scrollX, d.scrollY = 0, 0
-	e.show(d)
+	return true
 }
 
 // entry returns the listing entry on line, if any.
-func (e *Editor) entry(line int) (dirEntry, bool) {
+func (e *Editor) entry(line int) (dirEntry, bool) { return e.entryOf(e.doc, line) }
+
+func (e *Editor) entryOf(d *doc, line int) (dirEntry, bool) {
 	i := line - dirHeader
-	if e.dir == nil || i < 0 || i >= len(e.dir.entries) {
+	if d.dir == nil || i < 0 || i >= len(d.dir.entries) {
 		return dirEntry{}, false
 	}
-	return e.dir.entries[i], true
+	return d.dir.entries[i], true
 }
 
 // activate opens the listing entry on line.

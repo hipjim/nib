@@ -24,6 +24,12 @@ under the folder by typing a few letters of its path (fuzzy, like fzf; ranks
 created / modified / accessed times, permissions and owner. Open files stay
 open in the background with their cursor, undo history and unsaved edits.
 
+Work is not lost: quitting with unsaved files asks first (quit again to
+discard). Running `quod` with no file reopens the last session's files where
+you left them. Files that change on disk reload by themselves (with the cursor
+on the last line, quod follows new lines like `tail -f`); a file you have
+edited is never replaced, and saving over a newer version asks first.
+
 Text is set in [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (NL, no ligatures),
 embedded in the binary under the OFL (see `fonts/OFL.txt`).
 
@@ -50,6 +56,7 @@ led to `ed`, `vi` and everything after.
 | `⌘E` | show the current file's folder |
 | `⌘I` | file properties |
 | `⌘W` | close the file |
+| `⌘Q` | quit (asks if anything is unsaved) |
 | `⌘F`, then `Enter` / `⇧Enter` / `F3` | find next / previous (lower-case query = case-insensitive) |
 | `⌘G` | go to `line[:col]` |
 | `⌘Z` / `⌘⇧Z` / `⌘Y` | undo / redo |

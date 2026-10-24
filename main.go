@@ -10,6 +10,7 @@ import (
 	"gioui.org/app"
 	"gioui.org/font"
 	"gioui.org/font/opentype"
+	"gioui.org/io/system"
 	"gioui.org/op"
 	"gioui.org/unit"
 )
@@ -58,11 +59,27 @@ func run(w *app.Window, path string) error {
 	// editor recovers from it.
 	debug.SetPanicOnFault(true)
 	ed := NewEditor(path)
+	ed.sessionPath = sessionFile()
+	if path == "" {
+		ed.restoreSession()
+	} else {
+		ed.keepSession()
+	}
 	ed.SetTitle = func(t string) { w.Option(app.Title(t)) }
+	ed.Quit = func() { w.Perform(system.ActionClose) }
+	invalidate := w.Invalidate
+	wake.Store(&invalidate)
+	go ed.watch.run(w.Invalidate)
 	var ops op.Ops
 	for {
 		switch e := w.Event().(type) {
+		case *app.ClosingEvent:
+			if !ed.MayClose() {
+				e.Abort()
+				w.Invalidate()
+			}
 		case app.DestroyEvent:
+			ed.saveSession(true)
 			return e.Err
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, e)
