@@ -8,7 +8,7 @@ import (
 )
 
 func newTestEditor(text string, cur Pos) *Editor {
-	e := &Editor{buf: NewBuffer(text), goal: -1}
+	e := &Editor{doc: newDoc("", NewBuffer(text))}
 	e.cursor, e.anchor = cur, cur
 	return e
 }
@@ -141,7 +141,7 @@ func BenchmarkTypeInBig(b *testing.B) {
 		b.Skip("set QUOD_FILE")
 	}
 	buf, _ := Load(path)
-	e := &Editor{buf: buf, goal: -1}
+	e := &Editor{doc: newDoc("", buf)}
 	e.cursor = Pos{buf.LineCount() / 2, 0}
 	e.anchor = e.cursor
 	for b.Loop() {

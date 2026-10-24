@@ -15,7 +15,8 @@ import (
 )
 
 // TestRender draws the editor offscreen. Set QUOD_SHOT=out.png to save it,
-// QUOD_FILE to pick the file and QUOD_LINE to put the cursor on a line.
+// QUOD_FILE to pick the file or folder and QUOD_LINE to put the cursor on a
+// line. QUOD_FINDER=query opens the file finder, QUOD_INFO=1 the properties.
 func TestRender(t *testing.T) {
 	out := os.Getenv("QUOD_SHOT")
 	if out == "" {
@@ -51,6 +52,23 @@ func TestRender(t *testing.T) {
 		start := time.Now()
 		e.Layout(gtx)
 		t.Logf("layout: %v", time.Since(start))
+	}
+	if q, ok := os.LookupEnv("QUOD_FINDER"); ok {
+		e.openFinder()
+		for {
+			if _, walking := e.finder.poll(); !walking {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		e.setInput(q)
+		ops.Reset()
+		e.Layout(gtx)
+	}
+	if os.Getenv("QUOD_INFO") != "" {
+		e.info = true
+		ops.Reset()
+		e.Layout(gtx)
 	}
 	if os.Getenv("QUOD_FIND") != "" {
 		e.openPrompt(promptFind, "")

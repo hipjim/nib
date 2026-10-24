@@ -68,23 +68,22 @@ const (
 	promptGoto
 	promptOpen
 	promptSaveAs
+	promptFiles
 )
 
-var promptLabels = [...]string{"", "find", "goto line", "open", "save as"}
+var promptLabels = [...]string{"", "find", "goto line", "open", "save as", "file"}
 
 const blinkPeriod = 530 * time.Millisecond
 
 type Editor struct {
-	buf    *Buffer
-	path   string
-	hl     *highlighter
+	*doc          // the current document
+	docs   []*doc // open documents, most recent first
+	root   string // folder the file finder searches
+	finder finder
 	plain  bool // syntax highlighting turned off
-	cursor Pos
-	anchor Pos // selection is [anchor, cursor]; empty when equal
-	goal   int // visual column kept across vertical moves; -1 if unset
+	info   bool // file properties panel shown
 
-	scrollY, scrollX float32
-	followCursor     bool
+	followCursor bool
 
 	shaper   *text.Shaper
 	font     font.Font
@@ -120,35 +119,16 @@ type Editor struct {
 
 func NewEditor(path string) *Editor {
 	e := &Editor{
-		buf:    NewBuffer(""),
-		hl:     newHighlighter(""),
-		goal:   -1,
 		shaper: text.NewShaper(text.NoSystemFonts(), text.WithCollection(fontCollection())),
 		font:   font.Font{Typeface: typeface},
 		size:   14,
 	}
+	e.root, _ = os.Getwd()
+	e.show(newDoc("", NewBuffer("")))
 	if path != "" {
 		e.open(path)
 	}
 	return e
-}
-
-func (e *Editor) open(path string) {
-	path = expandHome(path)
-	b, err := Load(path)
-	switch {
-	case os.IsNotExist(err):
-		b = NewBuffer("")
-		e.flash("new file", false)
-	case err != nil:
-		e.flash(err.Error(), true)
-		return
-	default:
-		e.flash(fmt.Sprintf("opened %d lines", b.LineCount()), false)
-	}
-	e.buf, e.path, e.hl = b, path, newHighlighter(path)
-	e.cursor, e.anchor, e.goal = Pos{}, Pos{}, -1
-	e.scrollX, e.scrollY = 0, 0
 }
 
 func (e *Editor) save(path string) {
@@ -159,6 +139,12 @@ func (e *Editor) save(path string) {
 	if err := e.buf.Save(path); err != nil {
 		e.flash(err.Error(), true)
 		return
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	if langFor(path) != e.hl.lang {
+		e.hl = newHighlighter(path)
 	}
 	e.path = path
 	e.flash(fmt.Sprintf("wrote %d lines", e.buf.LineCount()), false)
@@ -177,6 +163,10 @@ func (e *Editor) flash(s string, warn bool) { e.msg, e.msgWarn = s, warn }
 
 // locked reports whether edits must wait for the file to finish loading.
 func (e *Editor) locked() bool {
+	if e.dir != nil {
+		e.flash("folder listings are read-only", true)
+		return true
+	}
 	if e.buf.Loading() {
 		e.flash("still loading, editing is paused", true)
 		return true
@@ -522,9 +512,13 @@ func (e *Editor) openPrompt(k promptKind, initial string) {
 
 func (e *Editor) setInput(s string) {
 	e.input = s
-	if e.prompt == promptFind {
+	switch e.prompt {
+	case promptFind:
 		e.findQuery = s
 		e.find(e.findOrigin, false)
+	case promptFiles:
+		e.finder.query, e.finder.sel = s, 0
+		e.finder.rank()
 	}
 }
 
@@ -579,14 +573,15 @@ func (e *Editor) submitPrompt() {
 		if in != "" {
 			e.save(in)
 		}
+	case promptFiles:
+		if f := &e.finder; f.sel < len(f.results) {
+			e.open(filepath.Join(f.root, filepath.FromSlash(f.results[f.sel].path)))
+		}
 	}
 }
 
-func cwdPrefix() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
+// dirPrefix is a folder path for the open prompt, ending in a separator.
+func dirPrefix(wd string) string {
 	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(wd, home) {
 		wd = "~" + wd[len(home):]
 	}
@@ -604,7 +599,7 @@ var navKeys = []key.Name{
 	key.NameTab, key.NameEscape, key.NameF3,
 }
 
-var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "G", "D", "K", "L", "=", "+", "-", "0"}
+var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "G", "D", "K", "L", "H", "P", "I", "W", "E", "=", "+", "-", "0"}
 
 func (e *Editor) filters() []event.Filter {
 	fs := []event.Filter{
@@ -686,6 +681,8 @@ func (e *Editor) pointer(gtx layout.Context, ev pointer.Event) {
 		}
 		e.lastClick = gtx.Now
 		switch {
+		case e.clicks == 2 && e.dir != nil:
+			e.activate(p.Line)
 		case e.clicks == 2:
 			s, t := wordAt(e.buf.Line(p.Line), p.Col)
 			e.anchor, e.cursor = Pos{p.Line, s}, Pos{p.Line, t}
@@ -738,17 +735,20 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 			e.undo(true)
 		case "S":
 			if e.path == "" || shift {
-				e.openPrompt(promptSaveAs, orDefault(e.path, cwdPrefix()))
+				e.openPrompt(promptSaveAs, orDefault(e.path, dirPrefix(e.root)))
 			} else {
 				e.save(e.path)
 			}
 		case "O":
-			if e.buf.Dirty() && !discardOK {
-				e.flash("unsaved changes · press again to discard", true)
-				e.discardOK = true
-				return
-			}
-			e.openPrompt(promptOpen, cwdPrefix())
+			e.openPrompt(promptOpen, dirPrefix(e.root))
+		case "P":
+			e.openFinder()
+		case "E":
+			e.up()
+		case "I":
+			e.info = !e.info
+		case "W":
+			e.closeDoc(discardOK)
 		case "F":
 			q := e.findQuery
 			if a, b, ok := e.sel(); ok && a.Line == b.Line {
@@ -791,6 +791,17 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 		}
 		e.followCursor = true
 		return
+	}
+
+	if e.dir != nil && m == 0 {
+		switch k.Name {
+		case key.NameReturn, key.NameEnter, key.NameRightArrow:
+			e.activate(e.cursor.Line)
+			return
+		case key.NameLeftArrow, key.NameDeleteBackward:
+			e.up()
+			return
+		}
 	}
 
 	switch k.Name {
@@ -882,6 +893,7 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 		}
 	case key.NameEscape:
 		e.anchor = e.cursor
+		e.info = false
 	case key.NameF3:
 		e.findNext(shift)
 	}
@@ -907,6 +919,15 @@ func (e *Editor) promptKey(k key.Event) bool {
 			e.setInput(e.input[:len(e.input)-n])
 		}
 	case key.NameUpArrow, key.NameDownArrow, key.NameF3:
+		if f := &e.finder; e.prompt == promptFiles {
+			// The best match is at the bottom, next to the prompt.
+			if k.Name == key.NameUpArrow {
+				f.sel = min(f.sel+1, max(0, len(f.results)-1))
+			} else {
+				f.sel = max(f.sel-1, 0)
+			}
+			return true
+		}
 		if e.prompt != promptFind {
 			return true
 		}
@@ -920,7 +941,7 @@ func (e *Editor) promptKey(k key.Event) bool {
 		}
 		e.prompt = promptNone
 		return false
-	case "A", "C", "X", "Z", "Y", "S", "O", "G", "D", "K", "L", "=", "+", "-", "0":
+	case "A", "C", "X", "Z", "Y", "S", "O", "G", "D", "K", "L", "H", "P", "I", "W", "E", "=", "+", "-", "0":
 		// Any other shortcut closes the prompt and runs normally.
 		e.prompt = promptNone
 		return false
@@ -1009,6 +1030,15 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	if e.buf.Poll() {
 		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(30 * time.Millisecond)})
 	}
+	if e.prompt == promptFiles {
+		changed, walking := e.finder.poll()
+		if changed {
+			e.finder.rank()
+		}
+		if walking {
+			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(50 * time.Millisecond)})
+		}
+	}
 	e.measure(gtx)
 	if !e.started {
 		e.started = true
@@ -1037,6 +1067,12 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	key.InputHintOp{Tag: e, Hint: key.HintText}.Add(gtx.Ops)
 	e.drawText(gtx, size.X, textH, gutterW)
 	area.Pop()
+
+	if e.prompt == promptFiles {
+		e.drawFinder(gtx, size.X, textH)
+	} else if e.info {
+		e.drawInfo(gtx, size.X, textH)
+	}
 
 	e.drawStatus(gtx, image.Rect(0, textH, size.X, size.Y))
 	return layout.Dimensions{Size: size}
@@ -1235,10 +1271,19 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	}
 	right := fmt.Sprintf("%d:%d  %s  %s  %d lines", e.cursor.Line+1,
 		visCol(e.buf.Line(e.cursor.Line), e.cursor.Col)+1, ind, eol, e.buf.LineCount())
+	if e.dir != nil {
+		right = fmt.Sprintf("%d items", e.dir.count)
+	}
 	if e.buf.Loading() {
 		right = fmt.Sprintf("loading %d%%  ", e.buf.LoadPct()) + right
 	}
-	if a, b, ok := e.sel(); ok {
+	if f := &e.finder; e.prompt == promptFiles {
+		right = fmt.Sprintf("%s/%s files", groupDigits(int64(f.matches)), groupDigits(int64(len(f.paths))))
+		if f.walking != nil {
+			right = "scanning…  " + right
+		}
+	}
+	if a, b, ok := e.sel(); ok && e.prompt != promptFiles {
 		if a.Line == b.Line {
 			right = fmt.Sprintf("(%d sel)  ", utf8.RuneCountInString(e.buf.Text(a, b))) + right
 		} else {
@@ -1270,8 +1315,14 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	if e.path != "" {
 		name = shortPath(e.path)
 	}
+	if e.dir != nil {
+		name = dirName(e.path)
+	}
 	if e.buf.Dirty() {
 		name += " ●"
+	}
+	if n := e.otherUnsaved(); n > 0 {
+		name += fmt.Sprintf("  +%d unsaved", n)
 	}
 	// Keep the left side clear of the position info on the right.
 	room := int(float32(rx-x)/cw) - 3

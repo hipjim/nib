@@ -39,6 +39,7 @@ type lang struct {
 	dashIdent    bool // identifiers may contain '-' (CSS, shell)
 	markup       bool // XML and HTML
 	log          bool // log files: timestamps and levels
+	dirCols      int  // folder listings: width of the name column
 
 	opens [256]bool // first bytes of comment and string delimiters
 	quote [256]bool
@@ -240,6 +241,8 @@ func (l *lang) scan(line string, st int, out []span) ([]span, int) {
 		return out, st
 	}
 	switch {
+	case l.dirCols > 0:
+		return l.scanDir(line, st, out)
 	case l.log:
 		return l.scanLog(line, out), 0
 	case l.markup:
