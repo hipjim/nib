@@ -1,3 +1,4 @@
 /quod
 *.png
 /samples/
+!/docs/*.png

@@ -1,104 +1,173 @@
 # quod
 
-A small, fast, GPU-rendered text editor written in Go with [Gio](https://gioui.org).
-Runs on macOS, Linux and Windows.
+**A tiny, very fast text editor, drawn on the GPU.**
+It opens a 2 GB file in about a second with under 300 MB of memory, and stays
+quiet, dark and out of your way. Written in Go with [Gio](https://gioui.org);
+runs on macOS, Linux and Windows. One binary of about 10 MB, nothing else to
+install.
 
-- Only the lines on screen are drawn: a frame takes about 0.1–0.15 ms.
-- Large files are memory-mapped and indexed in the background, so the first
-  screen shows up right away: ~2 ms for 100 MB, ~20 ms for 2 GB.
-- Lines live in blocks of offsets into the file (4 bytes per line until edited),
-  so an edit touches one small block: ~30 µs even in a 22-million-line file.
-- Find searches unedited parts of the file as whole pieces on all cores,
-  scanning for the query's rarest byte (or skipping ahead Horspool-style when
-  every byte is common): searching all of a 2 GB file takes 25–230 ms.
-- Saving writes unedited parts straight from the original file: 1.3 s for 2 GB.
-- Syntax highlighting only looks at the lines on screen, so it costs the same
-  in a 2 GB file as in a 2 KB one. The state of multi-line comments and
-  strings is saved every 1024 lines.
+<p align="center"><img src="docs/code.png" width="760" alt="quod editing Go code"></p>
 
-Highlighting covers comments, strings, numbers and keywords for Go, C/C++, Rust,
-JavaScript/TypeScript, Java and friends, Python, shell, Ruby, SQL, Lua, CSS,
-JSON, YAML/TOML/INI and XML/HTML. Log files (`.log`) get dimmed timestamps and
-colored `ERROR` / `WARN` levels. Lines over 10 KB are left plain.
+## Why quod
 
-Open a folder (`quod .`) to browse it: entries are listed with size, modified
-and created dates; `Enter` opens, `←` / `Backspace` goes up. `⌘P` finds any file
-under the folder by typing a few letters of its path (fuzzy, like fzf; ranks
-67,000 paths in under 8 ms). `⌘I` shows a file's properties: size, lines,
-created / modified / accessed times, permissions and owner. Open files stay
-open in the background with their cursor, undo history and unsaved edits.
+- **Instant on huge files.** The first screen of a 2 GB file shows up in ~20 ms;
+  the rest is indexed in the background in under a second. Zed needs ~39 s and
+  6 GB for the same file ([numbers below](#compared-to-zed)).
+- **Small and light.** Memory stays at 110–280 MB whether the file is 3 KB or
+  2 GB. A frame takes about 0.1 ms to lay out.
+- **A real editor.** Undo, several open files, find, syntax highlighting,
+  folder browsing and a fuzzy file finder, with keys you already know.
+- **Never loses work.** It asks before quitting with unsaved files, restores
+  your last session, and reloads files that change on disk.
 
-Work is not lost: quitting with unsaved files asks first (quit again to
-discard). Running `quod` with no file reopens the last session's files where
-you left them. Files that change on disk reload by themselves (with the cursor
-on the last line, quod follows new lines like `tail -f`); a file you have
-edited is never replaced, and saving over a newer version asks first.
-
-Text is set in [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (NL, no ligatures),
-embedded in the binary under the OFL (see `fonts/OFL.txt`).
+## Install
 
 ```sh
 go install github.com/hipjim/quod@latest
-quod file.txt
-# or from a clone:
+```
+
+Needs Go 1.26 or newer. On Linux, Gio also needs a C compiler and the
+Wayland/X11 development packages; see [Gio's install notes](https://gioui.org/doc/install).
+
+Or build from a clone:
+
+```sh
+git clone https://github.com/hipjim/quod && cd quod
 go build -o quod . && ./quod file.txt
 ```
 
-*quod* comes from **quod** erat demonstrandum, in tribute to
-[QED](https://en.wikipedia.org/wiki/QED_(text_editor)) (1965), the editor that
-led to `ed`, `vi` and everything after.
+## Using it
+
+```sh
+quod file.txt    # open a file
+quod .           # browse a folder
+quod             # pick up where you left off
+```
+
+### Editing
+
+Everything you would expect, and fast in files of any size: undo and redo,
+selections with the mouse and keyboard, word moves, auto-indent, indenting and
+dedenting blocks, moving and duplicating lines, copying the whole line when
+nothing is selected, and `⌘D` to select the next occurrence of a word. Tabs or
+spaces and LF or CRLF line endings are detected and kept.
+
+### Syntax highlighting
+
+Comments, strings, numbers and keywords for Go, C/C++, Rust,
+JavaScript/TypeScript, Java and friends, Python, shell, Ruby, SQL, Lua, CSS,
+JSON, YAML/TOML/INI and XML/HTML. Log files get dimmed timestamps and red
+`ERROR` / amber `WARN`. Only the lines on screen are scanned, so it costs the
+same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
+
+### Folders, the file finder and file properties
+
+<p align="center">
+  <img src="docs/folder.png" width="400" alt="a folder listing with the file properties panel">
+  <img src="docs/finder.png" width="400" alt="the fuzzy file finder">
+</p>
+
+- **Folders** open as a listing with size, modified and created dates. `Enter`
+  opens, `←` or `Backspace` goes up, and `⌘E` jumps from a file to its folder.
+- **`⌘P`** finds any file under the folder from a few letters of its path,
+  like fzf. It walks the folder in the background, skips `.git`,
+  `node_modules` and `.gitignore` matches, and ranks 67,000 paths in under 8 ms.
+- **`⌘I`** shows a file's properties: size, lines, created, modified and
+  accessed times, permissions and owner.
+
+Open files stay open in the background with their cursor, undo history and
+unsaved edits; `⌘P` lists them first.
+
+### Never losing work
+
+- Quitting or closing the window with unsaved files asks first; quit again to
+  discard them.
+- `quod` with no arguments reopens your last files where you left them.
+- Files that change on disk reload by themselves. With the cursor on the last
+  line, quod follows new lines like `tail -f`. A file you have edited is never
+  replaced, and saving over a newer version on disk asks first.
 
 ## Keys
 
-`⌘` is Ctrl on Linux and Windows; word moves use Alt on macOS and Ctrl elsewhere.
+`⌘` is Ctrl on Linux and Windows. Word moves use Alt on macOS and Ctrl elsewhere.
 
 | Key | Action |
 | --- | --- |
 | `⌘S` / `⌘⇧S` | save / save as |
 | `⌘P` | find a file in the folder (`↑` / `↓` pick, `Enter` opens) |
-| `⌘O` | open a file or folder by path (Tab completes) |
+| `⌘O` | open a file or folder by path (`Tab` completes) |
 | `⌘E` | show the current file's folder |
 | `⌘I` | file properties |
 | `⌘W` | close the file |
 | `⌘Q` | quit (asks if anything is unsaved) |
-| `⌘F`, then `Enter` / `⇧Enter` / `F3` | find next / previous (lower-case query = case-insensitive) |
+| `⌘F`, then `Enter` / `⇧Enter` / `F3` | find next / previous (a lower-case query ignores case) |
 | `⌘G` | go to `line[:col]` |
 | `⌘Z` / `⌘⇧Z` / `⌘Y` | undo / redo |
-| `⌘C` / `⌘X` / `⌘V` | copy / cut / paste (no selection = whole line) |
-| `⌘D` | select word, then next occurrence |
-| `⌘L` | select line (repeat to extend) |
-| `⌘⇧D` / `⌘⇧K` | duplicate / delete line |
-| `Alt↑` / `Alt↓` | move line up / down |
+| `⌘C` / `⌘X` / `⌘V` | copy / cut / paste (no selection: the whole line) |
+| `⌘D` | select the word, then its next occurrence |
+| `⌘L` | select the line (repeat to extend) |
+| `⌘⇧D` / `⌘⇧K` | duplicate / delete the line |
+| `Alt↑` / `Alt↓` | move the line up / down |
 | `Tab` / `⇧Tab` | indent / dedent (works on selections) |
 | `⌘=` / `⌘-` / `⌘0` | zoom in / out / reset |
 | `⌘⇧H` | syntax highlighting on / off |
-| `Esc` | clear selection, close prompt |
+| `Esc` | clear the selection, close a prompt or panel |
 
-Double-click selects a word, triple-click a line.
+Double-click selects a word, triple-click a line. Drag the scrollbar, or click
+anywhere on it to jump there.
+
+## How it is fast
+
+- **Only what is on screen is drawn**, and it is drawn on the GPU.
+- **Big files are memory-mapped**, not copied. Lines are found in the
+  background, so the first screen appears right away.
+- **Lines live in blocks of 1,024** that store 4-byte offsets into the file
+  until edited. An edit touches one small block: ~30 µs even in a
+  22-million-line file.
+- **Find searches whole pieces of the file on all cores**, jumping between the
+  query's rarest byte, or skipping ahead Horspool-style when every byte is
+  common. Searching all of a 2 GB file takes 25–230 ms.
+- **Saving writes unedited parts straight from the original file**: 2 GB in 1.3 s.
+- **Highlighting scans only the visible lines** and remembers multi-line
+  comments and strings every 1,024 lines.
+- **Startup works while the window opens**: the file loads and the first screen
+  is laid out before the first frame.
 
 ## Compared to Zed
 
-Opening a file on an M4 Mac (Zed 1.25.2, language servers off; median of 3 runs,
-1 for 2 GB). "Ready" is when the editor stops using CPU after opening.
+Opening files and a folder on an M4 Mac with 16 GB, against Zed 1.25.2 with
+language servers off. Medians of 3 runs (2 for the folder, 1 for 2 GB).
 
-| File | quod ready | Zed ready | quod CPU | Zed CPU | quod memory | Zed memory |
-| --- | --- | --- | --- | --- | --- | --- |
-| 3 MB text | ~1.3 s | ~2.3 s | 0.27 s | 1.1 s | 137 MB | 145 MB |
-| 9 MB C source | ~1.3 s | ~2.6 s | 0.34 s | 4.2 s | 182 MB | 349 MB |
-| 100 MB XML | ~0.3 s | ~2.5 s | 0.27 s | 3.3 s | 157 MB | 493 MB |
-| 2 GB XML | 1.3 s | 39.6 s | 1.4 s | 46 s | 288 MB | 6.3 GB |
+| Opening | quod CPU | Zed CPU | quod memory | Zed memory |
+| --- | --- | --- | --- | --- |
+| 3 MB text | 0.26 s | 1.1 s | 176 MB | 196 MB |
+| 9 MB C source | 0.31 s | 4.2 s | 184 MB | 349 MB |
+| 100 MB XML | 0.31 s | 3.3 s | 150 MB | 494 MB |
+| **2 GB XML** | **1.2 s** | **46 s** | **273 MB** | **6.2 GB** |
+| Folder with 67,000 files | 0.22 s | 4.3 s | 114 MB | 221 MB |
 
-Zed also highlights syntax and tracks git, which quod does not, so part of its
-cost buys features. Ready times vary by about a second between runs. Reproduce
-with `bench/run.sh <file>` (macOS, needs Zed in `/Applications`).
+On the 2 GB file quod is ready in ~1 s and Zed in ~39 s. Zed does more: it
+parses whole files for highlighting, tracks git and indexes every folder you
+open, while quod highlights only the screen and walks a folder only when you
+press `⌘P`. Run it yourself with `bench/run.sh <file or folder>` (macOS, with
+Zed in `/Applications`).
 
-## Tests
+## Development
 
 ```sh
-go test ./...
-QUOD_SHOT=out.png go test -run TestRender .   # offscreen GPU screenshot
+go test ./...                                          # tests
+QUOD_FILE=big.xml go test -run '^$' -bench Big .       # load, edit, find and save benchmarks
+QUOD_SHOT=out.png QUOD_FILE=main.go go test -run TestRender .   # offscreen screenshot
 ```
+
+## The name
+
+*quod* comes from **quod** erat demonstrandum, in tribute to
+[QED](https://en.wikipedia.org/wiki/QED_(text_editor)) (1965), the editor that
+led to `ed`, `vi` and everything after.
 
 ## License
 
-MIT. The bundled JetBrains Mono font is under the SIL Open Font License (`fonts/OFL.txt`).
+MIT. Text is set in [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (NL, no
+ligatures), embedded in the binary under the SIL Open Font License
+(`fonts/OFL.txt`).
