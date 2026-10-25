@@ -1,0 +1,109 @@
+name: Release
+
+# Push a tag like v1.2.3 to build quod for every platform and publish a
+# GitHub release with the archives and their checksums.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build a universal quod.app and binary
+        run: scripts/macos-app.sh "$GITHUB_REF_NAME" dist
+      - name: Package
+        run: |
+          ditto -c -k --keepParent dist/quod.app "dist/quod-$GITHUB_REF_NAME-macos-universal.zip"
+          tar czf "dist/quod-$GITHUB_REF_NAME-macos-universal.tar.gz" -C dist quod -C .. README.md LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+
+  linux:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install Gio's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc pkg-config libwayland-dev libx11-dev libx11-xcb-dev \
+            libxkbcommon-x11-dev libgles2-mesa-dev libegl1-mesa-dev libffi-dev libxcursor-dev libvulkan-dev
+      - name: Build and package
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X main.version=$GITHUB_REF_NAME" -o dist/quod .
+          tar czf "dist/quod-$GITHUB_REF_NAME-linux-${{ matrix.arch }}.tar.gz" -C dist quod -C .. README.md LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*.tar.gz
+
+  windows:
+    # Windows needs no cgo, so it builds on Linux. gogio embeds the icon and
+    # a manifest and makes a GUI app with no console window.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build and package
+        run: |
+          go install gioui.org/cmd/gogio@v0.10.3
+          for arch in amd64 arm64; do
+            mkdir -p "dist/$arch"
+            gogio -target windows -arch "$arch" -appid io.github.hipjim.quod -icon appicon.png \
+              -version "${GITHUB_REF_NAME#v}.1" -ldflags "-s -w -X main.version=$GITHUB_REF_NAME" \
+              -o "dist/$arch/quod.exe" .
+            cp README.md LICENSE "dist/$arch/"
+            (cd "dist/$arch" && zip -q "../quod-$GITHUB_REF_NAME-windows-$arch.zip" quod.exe README.md LICENSE)
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.zip
+
+  release:
+    needs: [macos, linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+          cat > notes.md <<'NOTES'
+          **macOS:** unzip `quod-*-macos-universal.zip` and move `quod.app` to Applications. It is not notarized yet, so the first time right-click it and choose **Open**, or run `xattr -d com.apple.quarantine /Applications/quod.app`. With Homebrew: `brew install hipjim/tap/quod`.
+
+          **Linux:** unpack the `.tar.gz` for your CPU and put `quod` on your `PATH`. It uses the system's Wayland or X11.
+
+          **Windows:** unzip and run `quod.exe`. SmartScreen may warn about an unknown publisher; choose **More info → Run anyway**.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "quod $GITHUB_REF_NAME" \
+            --notes-file notes.md --generate-notes quod-* checksums.txt

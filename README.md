@@ -1,5 +1,8 @@
 # quod
 
+[![CI](https://github.com/hipjim/quod/actions/workflows/ci.yml/badge.svg)](https://github.com/hipjim/quod/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/hipjim/quod)](https://github.com/hipjim/quod/releases/latest)
+
 **A tiny, very fast text editor, drawn on the GPU.**
 It opens a 2 GB file in about a second with under 300 MB of memory, and stays
 quiet, dark and out of your way. Written in Go with [Gio](https://gioui.org);
@@ -22,19 +25,38 @@ install.
 
 ## Install
 
+**Download** the latest build from the
+[releases page](https://github.com/hipjim/quod/releases/latest):
+
+| Platform | Download | Notes |
+| --- | --- | --- |
+| macOS (Apple Silicon and Intel) | `quod-…-macos-universal.zip` | Unzip and move `quod.app` to Applications. It is not notarized yet: the first time, right-click it and choose **Open**. |
+| macOS command line | `quod-…-macos-universal.tar.gz` | Put `quod` on your `PATH`. |
+| Linux (x86-64, ARM) | `quod-…-linux-amd64.tar.gz` / `-arm64` | Uses the system's Wayland or X11. |
+| Windows (x86-64, ARM) | `quod-…-windows-amd64.zip` / `-arm64` | SmartScreen may warn about an unknown publisher: **More info → Run anyway**. |
+
+**Homebrew** (macOS), built from source:
+
+```sh
+brew install hipjim/tap/quod
+```
+
+**Go** 1.26 or newer:
+
 ```sh
 go install github.com/hipjim/quod@latest
 ```
 
-Needs Go 1.26 or newer. On Linux, Gio also needs a C compiler and the
-Wayland/X11 development packages; see [Gio's install notes](https://gioui.org/doc/install).
-
-Or build from a clone:
+On Linux, building needs a C compiler and the Wayland/X11 development
+packages; see [Gio's install notes](https://gioui.org/doc/install). To build
+from a clone:
 
 ```sh
 git clone https://github.com/hipjim/quod && cd quod
 go build -o quod . && ./quod file.txt
 ```
+
+`quod --version` prints the version.
 
 ## Using it
 
@@ -153,6 +175,12 @@ press `⌘P`. Run it yourself with `bench/run.sh <file or folder>` (macOS, with
 Zed in `/Applications`).
 
 ## Development
+
+Every push is tested on macOS, Linux and Windows. Pushing a tag like `v1.2.3`
+builds all platforms and publishes a release
+([`.github/workflows/release.yml`](.github/workflows/release.yml)).
+`scripts/macos-app.sh` builds the macOS app locally, and
+`QUOD_ICON=appicon.png go test -run TestIcon .` redraws the icon.
 
 ```sh
 go test ./...                                          # tests

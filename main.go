@@ -37,10 +37,37 @@ func fontCollection() []font.FontFace {
 	return faces
 }
 
+// version is set for releases with -ldflags "-X main.version=v1.2.3".
+var version = ""
+
+func versionString() string {
+	if version != "" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version // go install github.com/hipjim/quod@v1.2.3
+	}
+	return "dev"
+}
+
+const usage = `usage: quod [file or folder]
+
+With no argument, quod reopens the files of the last session.
+See https://github.com/hipjim/quod for the keys.
+`
+
 func main() {
 	path := ""
 	if len(os.Args) > 1 {
 		path = os.Args[1]
+		switch path {
+		case "-v", "-version", "--version":
+			fmt.Println("quod", versionString())
+			return
+		case "-h", "-help", "--help":
+			fmt.Print(usage)
+			return
+		}
 	}
 	go func() {
 		w := new(app.Window)

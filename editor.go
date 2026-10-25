@@ -133,6 +133,9 @@ func NewEditor(path string) *Editor {
 		size:   14,
 	}
 	e.root, _ = os.Getwd()
+	if home, err := os.UserHomeDir(); err == nil && (e.root == "" || e.root == "/") {
+		e.root = home // started from Finder or a launcher, not a shell
+	}
 	e.show(newDoc("", NewBuffer("")))
 	if path != "" {
 		e.open(path)

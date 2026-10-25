@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -129,9 +130,11 @@ func TestFileProps(t *testing.T) {
 	for _, pr := range fileProps(p, 2, false) {
 		got[pr.key] = pr.val
 	}
-	if got["kind"] != "go file" || got["size"] != "10 B (10 bytes)" || got["lines"] != "2" ||
-		got["mode"] != "-rw-r----- (0640)" || got["modified"] == "-" {
+	if got["kind"] != "go file" || got["size"] != "10 B (10 bytes)" || got["lines"] != "2" || got["modified"] == "-" {
 		t.Fatalf("got %v", got)
+	}
+	if runtime.GOOS != "windows" && got["mode"] != "-rw-r----- (0640)" {
+		t.Fatalf("mode %q", got["mode"]) // Windows has no Unix permissions
 	}
 	if humanSize(1536) != "1.5 KB" || humanSize(3<<30) != "3.0 GB" || groupDigits(1234567) != "1,234,567" {
 		t.Fatal("formatting")

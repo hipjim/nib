@@ -2,3 +2,6 @@
 *.png
 /samples/
 !/docs/*.png
+!/appicon.png
+*.syso
+/dist/
