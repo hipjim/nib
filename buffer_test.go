@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -104,8 +105,11 @@ func TestSaveCRLF(t *testing.T) {
 	}
 	data, _ := os.ReadFile(path)
 	fi, _ := os.Stat(path)
-	if string(data) != "a\r\nb!\r\n" || fi.Mode().Perm() != 0o600 || b.Dirty() {
-		t.Fatalf("saved %q mode %v", data, fi.Mode())
+	if string(data) != "a\r\nb!\r\n" || b.Dirty() {
+		t.Fatalf("saved %q", data)
+	}
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v, want the file's own -rw-------", fi.Mode()) // Windows has no Unix permissions
 	}
 }
 

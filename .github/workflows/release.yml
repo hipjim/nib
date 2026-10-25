@@ -13,8 +13,8 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Build a universal quod.app and binary
@@ -23,7 +23,7 @@ jobs:
         run: |
           ditto -c -k --keepParent dist/quod.app "dist/quod-$GITHUB_REF_NAME-macos-universal.zip"
           tar czf "dist/quod-$GITHUB_REF_NAME-macos-universal.tar.gz" -C dist quod -C .. README.md LICENSE
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: |
@@ -40,8 +40,8 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Install Gio's Linux dependencies
@@ -54,7 +54,7 @@ jobs:
           mkdir -p dist
           go build -trimpath -ldflags "-s -w -X main.version=$GITHUB_REF_NAME" -o dist/quod .
           tar czf "dist/quod-$GITHUB_REF_NAME-linux-${{ matrix.arch }}.tar.gz" -C dist quod -C .. README.md LICENSE
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}
           path: dist/*.tar.gz
@@ -64,8 +64,8 @@ jobs:
     # a manifest and makes a GUI app with no console window.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Build and package
@@ -79,7 +79,7 @@ jobs:
             cp README.md LICENSE "dist/$arch/"
             (cd "dist/$arch" && zip -q "../quod-$GITHUB_REF_NAME-windows-$arch.zip" quod.exe README.md LICENSE)
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: dist/*.zip
@@ -88,7 +88,7 @@ jobs:
     needs: [macos, linux, windows]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
