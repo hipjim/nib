@@ -17,11 +17,11 @@ import (
 	"gioui.org/widget"
 )
 
-// TestIcon draws the app icon. Set QUOD_ICON=appicon.png to write it.
+// TestIcon draws the app icon. Set NIB_ICON=appicon.png to write it.
 func TestIcon(t *testing.T) {
-	out := os.Getenv("QUOD_ICON")
+	out := os.Getenv("NIB_ICON")
 	if out == "" {
-		t.Skip("set QUOD_ICON to draw the icon")
+		t.Skip("set NIB_ICON to draw the icon")
 	}
 	const size = 1024
 	win, err := headless.NewWindow(size, size)
@@ -42,7 +42,7 @@ func TestIcon(t *testing.T) {
 	paint.FillShape(gtx.Ops, rgb(0x232a33), clip.UniformRRect(body, radius).Op(gtx.Ops))
 	paint.FillShape(gtx.Ops, colBg, clip.UniformRRect(body.Inset(6), radius-6).Op(gtx.Ops))
 
-	// A bold "q" and a block cursor after it.
+	// A bold "n" and a block cursor after it.
 	shaper := text.NewShaper(text.NoSystemFonts(), text.WithCollection(fontCollection()))
 	f := font.Font{Typeface: typeface, Weight: font.Bold}
 	m := op.Record(gtx.Ops)
@@ -51,12 +51,12 @@ func TestIcon(t *testing.T) {
 	g := gtx
 	g.Constraints = layout.Constraints{Max: image.Pt(size, size)}
 	m = op.Record(gtx.Ops)
-	dims := widget.Label{MaxLines: 1}.Layout(g, shaper, f, 620, "q", col)
+	dims := widget.Label{MaxLines: 1}.Layout(g, shaper, f, 620, "n", col)
 	call := m.Stop()
-	// Center the mark from the top of the "q" to the end of its tail; the
-	// cursor runs from the x-height to the baseline.
-	const xHeight, descent, curW, gap = 0.55 * 620, 0.2 * 620, 170, 36
-	base := size/2 + int(xHeight-descent)/2
+	// Center the mark between the x-height and the baseline, where the
+	// cursor runs too.
+	const xHeight, curW, gap = 0.55 * 620, 170, 36
+	base := size/2 + int(xHeight)/2
 	x := (size - dims.Size.X - gap - curW) / 2
 	st := op.Offset(image.Pt(x, base-(dims.Size.Y-dims.Baseline))).Push(gtx.Ops)
 	call.Add(gtx.Ops)

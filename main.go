@@ -1,4 +1,4 @@
-// Command quod is a small, fast, GPU-rendered text editor.
+// Command nib is a small, fast, GPU-rendered text editor.
 package main
 
 import (
@@ -45,15 +45,15 @@ func versionString() string {
 		return version
 	}
 	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
-		return bi.Main.Version // go install github.com/hipjim/quod@v1.2.3
+		return bi.Main.Version // go install github.com/hipjim/nib@v1.2.3
 	}
 	return "dev"
 }
 
-const usage = `usage: quod [file or folder]
+const usage = `usage: nib [file or folder]
 
-With no argument, quod reopens the files of the last session.
-See https://github.com/hipjim/quod for the keys.
+With no argument, nib reopens the files of the last session.
+See https://github.com/hipjim/nib for the keys.
 `
 
 func main() {
@@ -62,7 +62,7 @@ func main() {
 		path = os.Args[1]
 		switch path {
 		case "-v", "-version", "--version":
-			fmt.Println("quod", versionString())
+			fmt.Println("nib", versionString())
 			return
 		case "-h", "-help", "--help":
 			fmt.Print(usage)
@@ -71,7 +71,7 @@ func main() {
 	}
 	go func() {
 		w := new(app.Window)
-		w.Option(app.Title("quod"), app.Size(unit.Dp(1000), unit.Dp(700)))
+		w.Option(app.Title("nib"), app.Size(unit.Dp(1000), unit.Dp(700)))
 		if err := run(w, path); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

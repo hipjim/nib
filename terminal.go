@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// macTerminals maps $TERM_PROGRAM to the app to open, so quod opens the
+// macTerminals maps $TERM_PROGRAM to the app to open, so nib opens the
 // terminal it was started from.
 var macTerminals = map[string]string{
 	"Apple_Terminal": "Terminal",
@@ -26,10 +26,10 @@ var linuxTerminals = []string{
 }
 
 // terminalCmd returns the command that opens a terminal window in dir.
-// $QUOD_TERMINAL overrides the choice: an app name on macOS, a command
+// $NIB_TERMINAL overrides the choice: an app name on macOS, a command
 // elsewhere.
 func terminalCmd(dir string) (*exec.Cmd, error) {
-	custom := os.Getenv("QUOD_TERMINAL")
+	custom := os.Getenv("NIB_TERMINAL")
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
@@ -65,7 +65,7 @@ func terminalCmd(dir string) (*exec.Cmd, error) {
 			}
 		}
 		if name == "" {
-			return nil, errors.New("no terminal found; set $QUOD_TERMINAL")
+			return nil, errors.New("no terminal found; set $NIB_TERMINAL")
 		}
 		f := strings.Fields(name)
 		cmd = exec.Command(f[0], f[1:]...)

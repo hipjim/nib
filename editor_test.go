@@ -130,9 +130,9 @@ func TestTextHelpers(t *testing.T) {
 }
 
 func BenchmarkLoadBig(b *testing.B) {
-	path := os.Getenv("QUOD_FILE")
+	path := os.Getenv("NIB_FILE")
 	if path == "" {
-		b.Skip("set QUOD_FILE")
+		b.Skip("set NIB_FILE")
 	}
 	for b.Loop() {
 		if _, err := Load(path); err != nil {
@@ -142,9 +142,9 @@ func BenchmarkLoadBig(b *testing.B) {
 }
 
 func BenchmarkTypeInBig(b *testing.B) {
-	path := os.Getenv("QUOD_FILE")
+	path := os.Getenv("NIB_FILE")
 	if path == "" {
-		b.Skip("set QUOD_FILE")
+		b.Skip("set NIB_FILE")
 	}
 	buf, _ := Load(path)
 	e := &Editor{doc: newDoc("", buf)}

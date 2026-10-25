@@ -1,4 +1,4 @@
-/quod
+/nib
 *.png
 /samples/
 !/docs/*.png

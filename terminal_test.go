@@ -9,14 +9,14 @@ import (
 func TestTerminalCmd(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TERM_PROGRAM", "ghostty")
-	t.Setenv("QUOD_TERMINAL", "")
+	t.Setenv("NIB_TERMINAL", "")
 	cmd, err := terminalCmd(dir)
 	if runtime.GOOS == "darwin" {
 		if err != nil || !slices.Equal(cmd.Args, []string{"open", "-a", "Ghostty", dir}) {
 			t.Fatalf("got %v %v", cmd, err)
 		}
 	}
-	t.Setenv("QUOD_TERMINAL", "myterm --flag")
+	t.Setenv("NIB_TERMINAL", "myterm --flag")
 	cmd, err = terminalCmd(dir)
 	if err != nil || cmd.Dir != dir {
 		t.Fatalf("got %v %v", cmd, err)

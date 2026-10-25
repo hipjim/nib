@@ -1566,7 +1566,7 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 		return
 	}
 
-	const appName = "quod"
+	const appName = "nib"
 	e.label(gtx, x, y, appName, colAccent)
 	x += int(float32(len(appName)+1) * cw)
 	name := "[scratch]"
@@ -1615,9 +1615,9 @@ func shortPath(p string) string {
 }
 
 func (e *Editor) updateTitle() {
-	t := "quod"
+	t := "nib"
 	if e.path != "" {
-		t = filepath.Base(e.path) + " — quod"
+		t = filepath.Base(e.path) + " — nib"
 	}
 	if e.buf.Dirty() {
 		t = "● " + t

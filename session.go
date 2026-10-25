@@ -32,7 +32,11 @@ func sessionFile() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(dir, "quod", "session.json")
+	p := filepath.Join(dir, "nib", "session.json")
+	if _, err := os.Stat(p); os.IsNotExist(err) {
+		os.Rename(filepath.Join(dir, "quod"), filepath.Join(dir, "nib")) // the old name
+	}
+	return p
 }
 
 // saveSession writes the open documents and where they were left, at most
@@ -79,7 +83,7 @@ func readSession(path string) (session, bool) {
 }
 
 // keepSession carries the last session's documents into the next one
-// without opening them, when quod was started on a file.
+// without opening them, when nib was started on a file.
 func (e *Editor) keepSession() {
 	if s, ok := readSession(e.sessionPath); ok {
 		e.keep = s.Docs

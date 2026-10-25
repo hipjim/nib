@@ -1,4 +1,4 @@
-module github.com/hipjim/quod
+module github.com/hipjim/nib
 
 go 1.26.8
 

@@ -1,7 +1,7 @@
-# quod
+# nib
 
-[![CI](https://github.com/hipjim/quod/actions/workflows/ci.yml/badge.svg)](https://github.com/hipjim/quod/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/hipjim/quod)](https://github.com/hipjim/quod/releases/latest)
+[![CI](https://github.com/hipjim/nib/actions/workflows/ci.yml/badge.svg)](https://github.com/hipjim/nib/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/hipjim/nib)](https://github.com/hipjim/nib/releases/latest)
 
 **A tiny, very fast text editor, drawn on the GPU.**
 It opens a 2 GB file in about a second with under 300 MB of memory, and stays
@@ -9,9 +9,9 @@ quiet, dark and out of your way. Written in Go with [Gio](https://gioui.org);
 runs on macOS, Linux and Windows. One binary of about 10 MB, nothing else to
 install.
 
-<p align="center"><img src="docs/code.png" width="760" alt="quod editing Go code"></p>
+<p align="center"><img src="docs/code.png" width="760" alt="nib editing Go code"></p>
 
-## Why quod
+## Why nib
 
 - **Instant on huge files.** The first screen of a 2 GB file shows up in ~20 ms;
   the rest is indexed in the background in under a second. Zed needs ~39 s and
@@ -27,25 +27,25 @@ install.
 ## Install
 
 **Download** the latest build from the
-[releases page](https://github.com/hipjim/quod/releases/latest):
+[releases page](https://github.com/hipjim/nib/releases/latest):
 
 | Platform | Download | Notes |
 | --- | --- | --- |
-| macOS (Apple Silicon and Intel) | `quod-…-macos-universal.zip` | Unzip and move `quod.app` to Applications. It is not notarized yet: the first time, right-click it and choose **Open**. |
-| macOS command line | `quod-…-macos-universal.tar.gz` | Put `quod` on your `PATH`. |
-| Linux (x86-64, ARM) | `quod-…-linux-amd64.tar.gz` / `-arm64` | Uses the system's Wayland or X11. |
-| Windows (x86-64, ARM) | `quod-…-windows-amd64.zip` / `-arm64` | SmartScreen may warn about an unknown publisher: **More info → Run anyway**. |
+| macOS (Apple Silicon and Intel) | `nib-…-macos-universal.zip` | Unzip and move `nib.app` to Applications. It is not notarized yet: the first time, right-click it and choose **Open**. |
+| macOS command line | `nib-…-macos-universal.tar.gz` | Put `nib` on your `PATH`. |
+| Linux (x86-64, ARM) | `nib-…-linux-amd64.tar.gz` / `-arm64` | Uses the system's Wayland or X11. |
+| Windows (x86-64, ARM) | `nib-…-windows-amd64.zip` / `-arm64` | SmartScreen may warn about an unknown publisher: **More info → Run anyway**. |
 
 **Homebrew** (macOS), built from source:
 
 ```sh
-brew install hipjim/tap/quod
+brew install hipjim/tap/nib
 ```
 
 **Go** 1.26 or newer:
 
 ```sh
-go install github.com/hipjim/quod@latest
+go install github.com/hipjim/nib@latest
 ```
 
 On Linux, building needs a C compiler and the Wayland/X11 development
@@ -53,18 +53,18 @@ packages; see [Gio's install notes](https://gioui.org/doc/install). To build
 from a clone:
 
 ```sh
-git clone https://github.com/hipjim/quod && cd quod
-go build -o quod . && ./quod file.txt
+git clone https://github.com/hipjim/nib && cd nib
+go build -o nib . && ./nib file.txt
 ```
 
-`quod --version` prints the version.
+`nib --version` prints the version.
 
 ## Using it
 
 ```sh
-quod file.txt    # open a file
-quod .           # browse a folder
-quod             # pick up where you left off
+nib file.txt    # open a file
+nib .           # browse a folder
+nib             # pick up where you left off
 ```
 
 ### Editing
@@ -113,10 +113,10 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
   accessed times, permissions and owner.
 
 **`⌘T`** opens a terminal in the folder of the current file (or of the
-listing). On macOS it opens the terminal app quod was started from (Terminal,
+listing). On macOS it opens the terminal app nib was started from (Terminal,
 iTerm, Ghostty, WezTerm or Warp), else Terminal; on Linux `$TERMINAL` or the
 first one installed; on Windows, Windows Terminal or `cmd`. Set
-`QUOD_TERMINAL` to choose another: an app name on macOS, a command elsewhere.
+`NIB_TERMINAL` to choose another: an app name on macOS, a command elsewhere.
 
 Open files stay open in the background with their cursor, undo history and
 unsaved edits; `⌘P` lists them first.
@@ -125,9 +125,9 @@ unsaved edits; `⌘P` lists them first.
 
 - Quitting or closing the window with unsaved files asks first; quit again to
   discard them.
-- `quod` with no arguments reopens your last files where you left them.
+- `nib` with no arguments reopens your last files where you left them.
 - Files that change on disk reload by themselves. With the cursor on the last
-  line, quod follows new lines like `tail -f`. A file you have edited is never
+  line, nib follows new lines like `tail -f`. A file you have edited is never
   replaced, and saving over a newer version on disk asks first.
 
 ## Keys
@@ -189,7 +189,7 @@ anywhere on it to jump there.
 Opening files and a folder on an M4 Mac with 16 GB, against Zed 1.25.2 with
 language servers off. Medians of 3 runs (2 for the folder, 1 for 2 GB).
 
-| Opening | quod CPU | Zed CPU | quod memory | Zed memory |
+| Opening | nib CPU | Zed CPU | nib memory | Zed memory |
 | --- | --- | --- | --- | --- |
 | 3 MB text | 0.26 s | 1.1 s | 176 MB | 196 MB |
 | 9 MB C source | 0.31 s | 4.2 s | 184 MB | 349 MB |
@@ -197,9 +197,9 @@ language servers off. Medians of 3 runs (2 for the folder, 1 for 2 GB).
 | **2 GB XML** | **1.2 s** | **46 s** | **273 MB** | **6.2 GB** |
 | Folder with 67,000 files | 0.22 s | 4.3 s | 114 MB | 221 MB |
 
-On the 2 GB file quod is ready in ~1 s and Zed in ~39 s. Zed does more: it
+On the 2 GB file nib is ready in ~1 s and Zed in ~39 s. Zed does more: it
 parses whole files for highlighting, tracks git and indexes every folder you
-open, while quod highlights only the screen and walks a folder only when you
+open, while nib highlights only the screen and walks a folder only when you
 press `⌘P`. Run it yourself with `bench/run.sh <file or folder>` (macOS, with
 Zed in `/Applications`).
 
@@ -209,19 +209,18 @@ Every push is tested on macOS, Linux and Windows. Pushing a tag like `v1.2.3`
 builds all platforms and publishes a release
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 `scripts/macos-app.sh` builds the macOS app locally, and
-`QUOD_ICON=appicon.png go test -run TestIcon .` redraws the icon.
+`NIB_ICON=appicon.png go test -run TestIcon .` redraws the icon.
 
 ```sh
 go test ./...                                          # tests
-QUOD_FILE=big.xml go test -run '^$' -bench Big .       # load, edit, find and save benchmarks
-QUOD_SHOT=out.png QUOD_FILE=main.go go test -run TestRender .   # offscreen screenshot
+NIB_FILE=big.xml go test -run '^$' -bench Big .        # load, edit, find and save benchmarks
+NIB_SHOT=out.png NIB_FILE=main.go go test -run TestRender .   # offscreen screenshot
 ```
 
 ## The name
 
-*quod* comes from **quod** erat demonstrandum, in tribute to
-[QED](https://en.wikipedia.org/wiki/QED_(text_editor)) (1965), the editor that
-led to `ed`, `vi` and everything after.
+A *nib* is the tip of a pen: the small part that does the writing. It was
+called quod until version 0.2.
 
 ## License
 

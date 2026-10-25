@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag like v1.2.3 to build quod for every platform and publish a
+# Push a tag like v1.2.3 to build nib for every platform and publish a
 # GitHub release with the archives and their checksums.
 on:
   push:
@@ -17,12 +17,12 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: Build a universal quod.app and binary
+      - name: Build a universal nib.app and binary
         run: scripts/macos-app.sh "$GITHUB_REF_NAME" dist
       - name: Package
         run: |
-          ditto -c -k --keepParent dist/quod.app "dist/quod-$GITHUB_REF_NAME-macos-universal.zip"
-          tar czf "dist/quod-$GITHUB_REF_NAME-macos-universal.tar.gz" -C dist quod -C .. README.md LICENSE
+          ditto -c -k --keepParent dist/nib.app "dist/nib-$GITHUB_REF_NAME-macos-universal.zip"
+          tar czf "dist/nib-$GITHUB_REF_NAME-macos-universal.tar.gz" -C dist nib -C .. README.md LICENSE
       - uses: actions/upload-artifact@v7
         with:
           name: macos
@@ -52,8 +52,8 @@ jobs:
       - name: Build and package
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags "-s -w -X main.version=$GITHUB_REF_NAME" -o dist/quod .
-          tar czf "dist/quod-$GITHUB_REF_NAME-linux-${{ matrix.arch }}.tar.gz" -C dist quod -C .. README.md LICENSE
+          go build -trimpath -ldflags "-s -w -X main.version=$GITHUB_REF_NAME" -o dist/nib .
+          tar czf "dist/nib-$GITHUB_REF_NAME-linux-${{ matrix.arch }}.tar.gz" -C dist nib -C .. README.md LICENSE
       - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}
@@ -73,11 +73,11 @@ jobs:
           go install gioui.org/cmd/gogio@v0.10.3
           for arch in amd64 arm64; do
             mkdir -p "dist/$arch"
-            gogio -target windows -arch "$arch" -appid io.github.hipjim.quod -icon appicon.png \
+            gogio -target windows -arch "$arch" -appid io.github.hipjim.nib -icon appicon.png \
               -version "${GITHUB_REF_NAME#v}.1" -ldflags "-s -w -X main.version=$GITHUB_REF_NAME" \
-              -o "dist/$arch/quod.exe" .
+              -o "dist/$arch/nib.exe" .
             cp README.md LICENSE "dist/$arch/"
-            (cd "dist/$arch" && zip -q "../quod-$GITHUB_REF_NAME-windows-$arch.zip" quod.exe README.md LICENSE)
+            (cd "dist/$arch" && zip -q "../nib-$GITHUB_REF_NAME-windows-$arch.zip" nib.exe README.md LICENSE)
           done
       - uses: actions/upload-artifact@v7
         with:
@@ -99,11 +99,11 @@ jobs:
           cd dist
           sha256sum * > checksums.txt
           cat > notes.md <<'NOTES'
-          **macOS:** unzip `quod-*-macos-universal.zip` and move `quod.app` to Applications. It is not notarized yet, so the first time right-click it and choose **Open**, or run `xattr -d com.apple.quarantine /Applications/quod.app`. With Homebrew: `brew install hipjim/tap/quod`.
+          **macOS:** unzip `nib-*-macos-universal.zip` and move `nib.app` to Applications. It is not notarized yet, so the first time right-click it and choose **Open**, or run `xattr -d com.apple.quarantine /Applications/nib.app`. With Homebrew: `brew install hipjim/tap/nib`.
 
-          **Linux:** unpack the `.tar.gz` for your CPU and put `quod` on your `PATH`. It uses the system's Wayland or X11.
+          **Linux:** unpack the `.tar.gz` for your CPU and put `nib` on your `PATH`. It uses the system's Wayland or X11.
 
-          **Windows:** unzip and run `quod.exe`. SmartScreen may warn about an unknown publisher; choose **More info → Run anyway**.
+          **Windows:** unzip and run `nib.exe`. SmartScreen may warn about an unknown publisher; choose **More info → Run anyway**.
           NOTES
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "quod $GITHUB_REF_NAME" \
-            --notes-file notes.md --generate-notes quod-* checksums.txt
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "nib $GITHUB_REF_NAME" \
+            --notes-file notes.md --generate-notes nib-* checksums.txt

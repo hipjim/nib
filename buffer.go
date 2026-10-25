@@ -95,7 +95,7 @@ func (b *Buffer) Save(path string) error {
 	if fi, err := os.Stat(path); err == nil {
 		mode = fi.Mode().Perm()
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".quod*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".nib*")
 	if err != nil {
 		return err
 	}

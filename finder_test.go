@@ -141,11 +141,11 @@ func TestFileProps(t *testing.T) {
 	}
 }
 
-// BenchmarkRank walks QUOD_ROOT (default: this folder) and ranks a query.
+// BenchmarkRank walks NIB_ROOT (default: this folder) and ranks a query.
 func BenchmarkRank(b *testing.B) {
 	var f finder
 	start := time.Now()
-	f.start(orDefault(os.Getenv("QUOD_ROOT"), "."))
+	f.start(orDefault(os.Getenv("NIB_ROOT"), "."))
 	for {
 		if _, walking := f.poll(); !walking {
 			break
@@ -153,7 +153,7 @@ func BenchmarkRank(b *testing.B) {
 		time.Sleep(time.Millisecond)
 	}
 	b.Logf("walked %d files in %v", len(f.paths), time.Since(start))
-	q := orDefault(os.Getenv("QUOD_QUERY"), "edgo")
+	q := orDefault(os.Getenv("NIB_QUERY"), "edgo")
 	b.Run("full", func(b *testing.B) {
 		for b.Loop() {
 			f.last, f.query = "", q

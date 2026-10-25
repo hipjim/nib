@@ -132,11 +132,11 @@ func TestIndexFold(t *testing.T) {
 	}
 }
 
-// loadAll loads QUOD_FILE and waits for indexing to finish.
+// loadAll loads NIB_FILE and waits for indexing to finish.
 func loadAll(b *testing.B) *Buffer {
-	path := os.Getenv("QUOD_FILE")
+	path := os.Getenv("NIB_FILE")
 	if path == "" {
-		b.Skip("set QUOD_FILE")
+		b.Skip("set NIB_FILE")
 	}
 	buf, err := Load(path)
 	if err != nil {
@@ -148,7 +148,7 @@ func loadAll(b *testing.B) *Buffer {
 	return buf
 }
 
-// BenchmarkFindBig searches the whole of QUOD_FILE for text that is not
+// BenchmarkFindBig searches the whole of NIB_FILE for text that is not
 // there, the worst case.
 func BenchmarkFindBig(b *testing.B) {
 	buf := loadAll(b)

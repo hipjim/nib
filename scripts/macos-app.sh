@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds a universal (Apple Silicon + Intel) quod.app and quod binary.
+# Builds a universal (Apple Silicon + Intel) nib.app and nib binary.
 # Usage: scripts/macos-app.sh [version] [outdir]
 set -eu
 version=${1:-dev}
@@ -10,22 +10,22 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$out"
 
 for arch in arm64 amd64; do
-	GOOS=darwin GOARCH=$arch CGO_ENABLED=1 go build -trimpath -ldflags "$ldflags" -o "$work/quod-$arch" .
+	GOOS=darwin GOARCH=$arch CGO_ENABLED=1 go build -trimpath -ldflags "$ldflags" -o "$work/nib-$arch" .
 done
-lipo -create -output "$out/quod" "$work/quod-arm64" "$work/quod-amd64"
+lipo -create -output "$out/nib" "$work/nib-arm64" "$work/nib-amd64"
 
-app="$out/quod.app"
+app="$out/nib.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$out/quod" "$app/Contents/MacOS/quod"
+cp "$out/nib" "$app/Contents/MacOS/nib"
 
-iconset="$work/quod.iconset"
+iconset="$work/nib.iconset"
 mkdir "$iconset"
 for s in 16 32 128 256 512; do
 	sips -z $s $s appicon.png --out "$iconset/icon_${s}x${s}.png" >/dev/null
 	sips -z $((s * 2)) $((s * 2)) appicon.png --out "$iconset/icon_${s}x${s}@2x.png" >/dev/null
 done
-iconutil -c icns -o "$app/Contents/Resources/quod.icns" "$iconset"
+iconutil -c icns -o "$app/Contents/Resources/nib.icns" "$iconset"
 
 short=${version#v}
 case $short in [0-9]*) ;; *) short=0.0.0 ;; esac
@@ -35,13 +35,13 @@ cat >"$app/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>quod</string>
+	<string>nib</string>
 	<key>CFBundleExecutable</key>
-	<string>quod</string>
+	<string>nib</string>
 	<key>CFBundleIdentifier</key>
-	<string>io.github.hipjim.quod</string>
+	<string>io.github.hipjim.nib</string>
 	<key>CFBundleIconFile</key>
-	<string>quod</string>
+	<string>nib</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -62,4 +62,4 @@ PLIST
 
 # Not notarized: an ad-hoc signature is the least macOS needs to run it.
 codesign --force --deep --sign - "$app"
-codesign --force --sign - "$out/quod"
+codesign --force --sign - "$out/nib"

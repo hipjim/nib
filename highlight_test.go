@@ -82,9 +82,9 @@ func TestHighlighterState(t *testing.T) {
 	}
 }
 
-// BenchmarkScan measures highlighting a file (QUOD_FILE, default sqlite3.c).
+// BenchmarkScan measures highlighting a file (NIB_FILE, default sqlite3.c).
 func BenchmarkScan(b *testing.B) {
-	path := orDefault(os.Getenv("QUOD_FILE"), "samples/sqlite3.c")
+	path := orDefault(os.Getenv("NIB_FILE"), "samples/sqlite3.c")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		b.Skip(err)
