@@ -1050,6 +1050,19 @@ func (e *Editor) measure(gtx layout.Context) {
 	e.textOffY = (e.lineH - dims.Size.Y) / 2
 }
 
+// WarmUp lays out a first screen offscreen, so the font is loaded and the
+// visible text shaped while the window is still being created.
+func (e *Editor) WarmUp() {
+	var ops op.Ops
+	e.Layout(layout.Context{
+		Ops:         &ops,
+		Now:         time.Now(),
+		Metric:      unit.Metric{PxPerDp: 2, PxPerSp: 2}, // a guess; most screens are 2x
+		Constraints: layout.Exact(image.Pt(2000, 1400)),
+	})
+	e.started, e.titleState = false, "" // the real first frame still does these
+}
+
 func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	defer func() {
 		// A memory-mapped file that is truncated on disk faults on access.

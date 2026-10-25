@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"io"
 	"math"
 	"os"
@@ -237,4 +238,61 @@ func readFile(path string) (string, error) {
 	}
 	// data is never written again, so share it instead of copying it.
 	return unsafe.String(&data[0], len(data)), nil
+}
+
+// writeTo writes the document with sep between lines. Unedited runs of
+// blocks are written straight from the file contents, newlines included,
+// in one call each instead of line by line.
+func (s *lineStore) writeTo(f io.Writer, sep string) error {
+	w := bufio.NewWriterSize(f, 1<<20)
+	runStart, runEnd := -1, -1 // pending run of unedited file bytes
+	flushRun := func() error {
+		if runStart < 0 {
+			return nil
+		}
+		if err := w.Flush(); err != nil {
+			return err
+		}
+		_, err := io.WriteString(f, s.data[runStart:runEnd])
+		runStart = -1
+		return err
+	}
+	for bi, k := range s.blocks {
+		lastBlock := bi == len(s.blocks)-1
+		if k.idx != nil {
+			// The block's lines with the newline after each, as in the file.
+			start, end := k.base+int(k.idx[0]), k.base+int(k.idx[len(k.idx)-1])
+			switch {
+			case end > len(s.data):
+				end = len(s.data) // the file's last line has no newline
+			case lastBlock:
+				// Lines after this block were deleted: drop its newline.
+				end--
+				if s.crlf && end > start && s.data[end-1] == '\r' {
+					end--
+				}
+			}
+			if start != runEnd {
+				if err := flushRun(); err != nil {
+					return err
+				}
+				runStart = start
+			}
+			runEnd = end
+			continue
+		}
+		if err := flushRun(); err != nil {
+			return err
+		}
+		for j, l := range k.lines {
+			w.WriteString(l)
+			if !lastBlock || j < len(k.lines)-1 {
+				w.WriteString(sep)
+			}
+		}
+	}
+	if err := flushRun(); err != nil {
+		return err
+	}
+	return w.Flush()
 }

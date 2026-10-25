@@ -8,6 +8,10 @@ Runs on macOS, Linux and Windows.
   screen shows up right away: ~2 ms for 100 MB, ~20 ms for 2 GB.
 - Lines live in blocks of offsets into the file (4 bytes per line until edited),
   so an edit touches one small block: ~30 µs even in a 22-million-line file.
+- Find searches unedited parts of the file as whole pieces on all cores,
+  scanning for the query's rarest byte (or skipping ahead Horspool-style when
+  every byte is common): searching all of a 2 GB file takes 25–230 ms.
+- Saving writes unedited parts straight from the original file: 1.3 s for 2 GB.
 - Syntax highlighting only looks at the lines on screen, so it costs the same
   in a 2 GB file as in a 2 KB one. The state of multi-line comments and
   strings is saved every 1024 lines.

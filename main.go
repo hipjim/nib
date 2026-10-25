@@ -58,32 +58,47 @@ func run(w *app.Window, path string) error {
 	// Let a truncated memory-mapped file panic instead of crashing; the
 	// editor recovers from it.
 	debug.SetPanicOnFault(true)
-	ed := NewEditor(path)
-	ed.sessionPath = sessionFile()
-	if path == "" {
-		ed.restoreSession()
-	} else {
-		ed.keepSession()
+
+	// Load the file and session while the window is being created.
+	ready := make(chan *Editor, 1)
+	go func() {
+		debug.SetPanicOnFault(true)
+		ed := NewEditor(path)
+		ed.sessionPath = sessionFile()
+		if path == "" {
+			ed.restoreSession()
+		} else {
+			ed.keepSession()
+		}
+		ed.WarmUp()
+		ready <- ed
+	}()
+	var ed *Editor
+	editor := func() *Editor {
+		if ed == nil {
+			ed = <-ready
+			ed.SetTitle = func(t string) { w.Option(app.Title(t)) }
+			ed.Quit = func() { w.Perform(system.ActionClose) }
+			invalidate := w.Invalidate
+			wake.Store(&invalidate)
+			go ed.watch.run(w.Invalidate)
+		}
+		return ed
 	}
-	ed.SetTitle = func(t string) { w.Option(app.Title(t)) }
-	ed.Quit = func() { w.Perform(system.ActionClose) }
-	invalidate := w.Invalidate
-	wake.Store(&invalidate)
-	go ed.watch.run(w.Invalidate)
 	var ops op.Ops
 	for {
 		switch e := w.Event().(type) {
 		case *app.ClosingEvent:
-			if !ed.MayClose() {
+			if !editor().MayClose() {
 				e.Abort()
 				w.Invalidate()
 			}
 		case app.DestroyEvent:
-			ed.saveSession(true)
+			editor().saveSession(true)
 			return e.Err
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, e)
-			ed.Layout(gtx)
+			editor().Layout(gtx)
 			e.Frame(gtx.Ops)
 		}
 	}

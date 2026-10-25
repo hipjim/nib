@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func bufText(b *Buffer) string { return b.Text(Pos{}, b.End()) }
@@ -123,6 +124,47 @@ func TestIndexFold(t *testing.T) {
 	for _, c := range cases {
 		if got := matcher(c.q)(c.s); got != c.want {
 			t.Errorf("matcher(%q)(%q) = %d, want %d", c.q, c.s, got, c.want)
+		}
+	}
+}
+
+// loadAll loads QUOD_FILE and waits for indexing to finish.
+func loadAll(b *testing.B) *Buffer {
+	path := os.Getenv("QUOD_FILE")
+	if path == "" {
+		b.Skip("set QUOD_FILE")
+	}
+	buf, err := Load(path)
+	if err != nil {
+		b.Fatal(err)
+	}
+	for buf.Poll() {
+		time.Sleep(time.Millisecond)
+	}
+	return buf
+}
+
+// BenchmarkFindBig searches the whole of QUOD_FILE for text that is not
+// there, the worst case.
+func BenchmarkFindBig(b *testing.B) {
+	buf := loadAll(b)
+	for _, q := range []string{"zqxjv", "Zqxjv", "etaoinse"} {
+		b.Run(q, func(b *testing.B) {
+			for b.Loop() {
+				if _, ok := buf.Find(q, Pos{}, false); ok {
+					b.Fatal("found")
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkSaveBig(b *testing.B) {
+	buf := loadAll(b)
+	out := filepath.Join(b.TempDir(), "out")
+	for b.Loop() {
+		if err := buf.Save(out); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

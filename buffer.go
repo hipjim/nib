@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"math"
 	"os"
 	"path/filepath"
@@ -94,14 +93,7 @@ func (b *Buffer) Save(path string) error {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	w := bufio.NewWriterSize(tmp, 1<<20)
-	for i := range b.LineCount() {
-		if i > 0 {
-			w.WriteString(sep)
-		}
-		w.WriteString(b.Line(i))
-	}
-	if err := w.Flush(); err != nil {
+	if err := b.lines.writeTo(tmp, sep); err != nil {
 		tmp.Close()
 		return err
 	}
@@ -269,46 +261,34 @@ func (b *Buffer) Find(q string, from Pos, backward bool) (Pos, bool) {
 	}
 	index := matcher(q)
 	n := b.LineCount()
-	for i := 0; i <= n; i++ {
-		li := (from.Line + i) % n
-		if backward {
-			li = ((from.Line-i)%n + n) % n
+	from = b.Clamp(from)
+	l, s := from.Line, b.Line(from.Line)
+	if !backward {
+		if j := index(s[from.Col:]); j >= 0 {
+			return Pos{l, from.Col + j}, true
 		}
-		s := b.Line(li)
-		if backward {
-			lim := len(s)
-			if i == 0 {
-				lim = from.Col
-			}
-			last := -1
-			for off := 0; ; {
-				j := index(s[off:lim])
-				if j < 0 {
-					break
-				}
-				last = off + j
-				off = last + 1
-			}
-			if last >= 0 {
-				return Pos{li, last}, true
-			}
-		} else {
-			off := 0
-			if i == 0 {
-				off = from.Col
-			}
-			if j := index(s[off:]); j >= 0 {
-				return Pos{li, off + j}, true
-			}
-		}
+		// The rest of the file, then from the top back to here.
+		return b.lines.searchLines([]lineRange{{l + 1, n}, {0, l + 1}}, false, index)
 	}
-	return Pos{}, false
+	last := -1
+	for off := 0; ; {
+		j := index(s[off:from.Col])
+		if j < 0 {
+			break
+		}
+		last = off + j
+		off = last + 1
+	}
+	if last >= 0 {
+		return Pos{l, last}, true
+	}
+	return b.lines.searchLines([]lineRange{{0, l}, {l, n}}, true, index)
 }
 
 // matcher returns a function that finds q in a line. A lower-case query
 // matches case-insensitively without allocating for ASCII queries.
 func matcher(q string) func(string) int {
-	exact := func(s string) int { return strings.Index(s, q) }
+	exact := func(s string) int { return indexRare(s, q, false) }
 	if strings.ToLower(q) != q || strings.ToUpper(q) == q {
 		return exact // has upper case, or nothing to fold
 	}
@@ -323,41 +303,7 @@ func matcher(q string) func(string) int {
 			}
 		}
 	}
-	return func(s string) int { return indexFoldASCII(s, q) }
-}
-
-// indexFoldASCII finds the lower-case ASCII string q in s, ignoring case.
-func indexFoldASCII(s, q string) int {
-	lo, up := q[0], q[0]
-	if 'a' <= lo && lo <= 'z' {
-		up = lo - 'a' + 'A'
-	}
-	nextLo, nextUp := -1, -1 // cached positions of the first byte's two cases
-	for i := 0; i+len(q) <= len(s); {
-		if nextLo < i {
-			if nextLo = strings.IndexByte(s[i:], lo); nextLo < 0 {
-				nextLo = len(s)
-			} else {
-				nextLo += i
-			}
-		}
-		if nextUp < i {
-			if nextUp = strings.IndexByte(s[i:], up); nextUp < 0 {
-				nextUp = len(s)
-			} else {
-				nextUp += i
-			}
-		}
-		i = min(nextLo, nextUp)
-		if i+len(q) > len(s) {
-			return -1
-		}
-		if equalFoldASCII(s[i:i+len(q)], q) {
-			return i
-		}
-		i++
-	}
-	return -1
+	return func(s string) int { return indexRare(s, q, true) }
 }
 
 func equalFoldASCII(s, lower string) bool {
