@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -136,5 +138,83 @@ func (e *Editor) drawInfo(gtx layout.Context, width, bottom int) {
 		}
 		e.label(gtx, vx, y, truncLeft(p.val, room), c)
 		y += lh
+	}
+}
+
+// grepRows is how many search hits the panel shows at once.
+func (e *Editor) grepRows() int { return max(1, e.viewH*6/10/max(1, e.lineH)) }
+
+// drawGrep lists the folder search hits above the prompt, in file and line
+// order, keeping the selected one in view.
+func (e *Editor) drawGrep(gtx layout.Context, width, bottom int) {
+	g := &e.grep
+	lh := e.lineH
+	rows := min(max(1, len(g.hits)), e.grepRows())
+	top := bottom - rows*lh - gtx.Dp(8)
+	e.panel(gtx, image.Rect(-1, top, width+1, bottom+1))
+	pad := gtx.Dp(12)
+	if len(g.hits) == 0 {
+		msg := "no matches"
+		switch {
+		case g.query == "":
+			msg = "type to search the files in " + shortPath(e.root)
+		case g.results != nil:
+			msg = "searching…"
+		}
+		e.label(gtx, pad, top+gtx.Dp(4), msg, tokColors[tokComment])
+		return
+	}
+	g.top = min(g.top, g.sel)
+	if g.sel >= g.top+rows {
+		g.top = g.sel - rows + 1
+	}
+	g.top = max(0, min(g.top, len(g.hits)-rows))
+	cols := int(float32(width-2*pad) / e.charW)
+	// The file and line take up to a third of the width, aligned.
+	pw := 0
+	for _, h := range g.hits[g.top : g.top+rows] {
+		pw = max(pw, utf8.RuneCountInString(h.path)+1+len(strconv.Itoa(h.line+1)))
+	}
+	pw = min(pw, cols/3)
+	room := cols - pw - 2
+	q := len(g.query)
+	for i, h := range g.hits[g.top : g.top+rows] {
+		y := top + gtx.Dp(4) + i*lh
+		if g.top+i == g.sel {
+			fill(gtx, image.Rect(0, y, width, y+lh), colSel)
+			fill(gtx, image.Rect(0, y, gtx.Dp(3), y+lh), colAccent)
+		}
+		e.label(gtx, pad, y, truncLeft(fmt.Sprintf("%s:%d", h.path, h.line+1), pw), tokColors[tokComment])
+
+		text, col, cut := h.text, h.col, h.cut
+		lead := min(col, len(text)-len(strings.TrimLeft(text, " \t")))
+		text, col = text[lead:], col-lead
+		if col+q > room-1 && col > 10 {
+			// Bring the match into view.
+			s := col - 10
+			for s < col && !utf8.RuneStart(text[s]) {
+				s++
+			}
+			text, col, cut = text[s:], col-s, true
+		}
+		if cut {
+			text, col = "…"+text, col+len("…")
+		}
+		text = strings.ReplaceAll(text, "\t", " ")
+		if n := 0; utf8.RuneCountInString(text) > room {
+			for j := range text {
+				if n == room {
+					text = text[:j]
+					break
+				}
+				n++
+			}
+		}
+		e.drawRuns(gtx, pad+int(float32(pw+2)*e.charW), y, text, func(b int) color.NRGBA {
+			if b >= col && b < col+q {
+				return colAccent
+			}
+			return colText
+		})
 	}
 }

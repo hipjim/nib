@@ -224,3 +224,27 @@ func TestDoubleShift(t *testing.T) {
 		t.Fatal("Shift+letter counted as a tap")
 	}
 }
+
+func TestReplacePrompt(t *testing.T) {
+	e := newTestEditor("foo bar\nFoo foo\n", Pos{})
+	e.openReplace()
+	e.setInput("foo")
+	e.submitPrompt()
+	if e.prompt != promptWith {
+		t.Fatal("Enter did not ask for the replacement")
+	}
+	e.setInput("baz")
+	e.submitPrompt() // replaces the first match, selects the next
+	if got := content(e); got != "baz bar\nFoo foo\n" {
+		t.Fatalf("got %q", got)
+	}
+	e.key(layout.Context{}, key.Event{Name: key.NameDownArrow}, false) // skip one
+	e.key(layout.Context{}, key.Event{Name: key.NameReturn, Modifiers: key.ModShortcut}, false)
+	if got := content(e); got != "baz bar\nbaz baz\n" || e.prompt != promptNone {
+		t.Fatalf("replace all gave %q, prompt %v", got, e.prompt)
+	}
+	e.undo(false)
+	if got := content(e); got != "baz bar\nFoo foo\n" {
+		t.Fatalf("undo gave %q", got)
+	}
+}

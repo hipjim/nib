@@ -5,6 +5,7 @@ import (
 	"image/png"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,7 +17,9 @@ import (
 
 // TestRender draws the editor offscreen. Set QUOD_SHOT=out.png to save it,
 // QUOD_FILE to pick the file or folder and QUOD_LINE to put the cursor on a
-// line. QUOD_FINDER=query opens the file finder, QUOD_INFO=1 the properties.
+// line. QUOD_FINDER=query opens the file finder, QUOD_INFO=1 the properties,
+// QUOD_GREP=query the folder search and QUOD_REPLACE=old:new the replace
+// prompt.
 func TestRender(t *testing.T) {
 	out := os.Getenv("QUOD_SHOT")
 	if out == "" {
@@ -73,6 +76,27 @@ func TestRender(t *testing.T) {
 	if os.Getenv("QUOD_FIND") != "" {
 		e.openPrompt(promptFind, "")
 		e.setInput(os.Getenv("QUOD_FIND"))
+		ops.Reset()
+		e.Layout(gtx)
+	}
+	if q, ok := os.LookupEnv("QUOD_GREP"); ok {
+		e.openGrep()
+		e.setInput(q)
+		for {
+			if _, running := e.grep.poll(); !running {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		ops.Reset()
+		e.Layout(gtx)
+	}
+	if r := os.Getenv("QUOD_REPLACE"); r != "" {
+		q, with, _ := strings.Cut(r, ":")
+		e.openReplace()
+		e.setInput(q)
+		e.submitPrompt()
+		e.setInput(with)
 		ops.Reset()
 		e.Layout(gtx)
 	}

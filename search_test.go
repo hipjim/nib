@@ -156,3 +156,80 @@ func TestSaveMatchesJoin(t *testing.T) {
 		}
 	}
 }
+
+func TestReplaceAllMatchesNaive(t *testing.T) {
+	rng := rand.New(rand.NewPCG(3, 4))
+	words := []string{"alpha", "Beta", "needle", "NeedLe", "x", "", "zz"}
+	for _, eol := range []string{"\n", "\r\n"} {
+		lines := make([]string, 50000)
+		for i := range lines {
+			var sb strings.Builder
+			for range rng.IntN(6) {
+				sb.WriteString(words[rng.IntN(len(words))])
+				sb.WriteByte(' ')
+			}
+			lines[i] = sb.String()
+		}
+		orig := strings.Join(lines, eol)
+		b := NewBuffer(orig)
+		for range 20 {
+			l := rng.IntN(b.LineCount())
+			b.Replace(Pos{l, 0}, Pos{l, 0}, "edit needle\nmore ", Pos{})
+		}
+		before := b.Text(Pos{}, b.End())
+		for _, c := range []struct{ q, r string }{{"needle", "pin"}, {"NeedLe", "N"}, {"z", "zz"}, {"nomatch", "y"}} {
+			index := matcher(c.q)
+			var want []string
+			n := 0
+			for _, l := range strings.Split(b.Text(Pos{}, b.End()), "\n") {
+				var sb strings.Builder
+				for s := l; ; {
+					j := index(s)
+					if j < 0 {
+						sb.WriteString(s)
+						break
+					}
+					sb.WriteString(s[:j] + c.r)
+					s = s[j+len(c.q):]
+					n++
+				}
+				want = append(want, sb.String())
+			}
+			if got := b.ReplaceAll(c.q, c.r, Pos{}); got != n {
+				t.Fatalf("ReplaceAll(%q) = %d, want %d", c.q, got, n)
+			}
+			if got := b.Text(Pos{}, b.End()); got != strings.Join(want, "\n") {
+				t.Fatalf("eol %q: ReplaceAll(%q, %q) gave the wrong text", eol, c.q, c.r)
+			}
+		}
+		for b.Text(Pos{}, b.End()) != before {
+			if _, ok := b.Undo(); !ok {
+				t.Fatal("undo did not restore the text")
+			}
+		}
+	}
+}
+
+func TestReplaceAllUndo(t *testing.T) {
+	b := NewBuffer("a needle\nnone\nNEEDLE needle")
+	b.saved = b.state()
+	if n := b.ReplaceAll("needle", "pin", Pos{}); n != 3 {
+		t.Fatalf("replaced %d, want 3", n)
+	}
+	if got := b.Text(Pos{}, b.End()); got != "a pin\nnone\npin pin" {
+		t.Fatalf("got %q", got)
+	}
+	b.Replace(Pos{0, 0}, Pos{0, 0}, "x", Pos{}) // typing right after is its own step
+	b.Undo()
+	if !b.Dirty() {
+		t.Fatal("not dirty after replace-all")
+	}
+	b.Undo()
+	if got := b.Text(Pos{}, b.End()); got != "a needle\nnone\nNEEDLE needle" || b.Dirty() {
+		t.Fatalf("undo gave %q, dirty %v", got, b.Dirty())
+	}
+	b.Redo()
+	if got := b.Text(Pos{}, b.End()); got != "a pin\nnone\npin pin" {
+		t.Fatalf("redo gave %q", got)
+	}
+}

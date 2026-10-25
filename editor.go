@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -69,17 +70,24 @@ const (
 	promptOpen
 	promptSaveAs
 	promptFiles
+	promptReplace // what to replace
+	promptWith    // what to replace it with
+	promptGrep    // search the folder
 )
 
-var promptLabels = [...]string{"", "find", "goto line", "open", "save as", "file"}
+var promptLabels = [...]string{"", "find", "goto line", "open", "save as", "file", "replace", "with", "search folder"}
 
 const blinkPeriod = 530 * time.Millisecond
+
+// shortcutName is how key.ModShortcut is written in messages.
+var shortcutName = map[bool]string{true: "⌘", false: "Ctrl+"}[runtime.GOOS == "darwin"]
 
 type Editor struct {
 	*doc          // the current document
 	docs   []*doc // open documents, most recent first
 	root   string // folder the file finder searches
 	finder finder
+	grep   grep
 	plain  bool // syntax highlighting turned off
 	info   bool // file properties panel shown
 
@@ -119,6 +127,7 @@ type Editor struct {
 	findOrigin Pos
 	findQuery  string
 	notFound   bool
+	replaceBy  string // the last replacement
 
 	msg        string
 	msgWarn    bool
@@ -519,7 +528,7 @@ func (e *Editor) paste(s string) {
 func (e *Editor) openPrompt(k promptKind, initial string) {
 	e.prompt, e.input, e.notFound = k, initial, false
 	e.findOrigin = e.cursor
-	if k == promptFind {
+	if k == promptFind || k == promptReplace {
 		e.findOrigin, _, _ = e.sel()
 	}
 }
@@ -527,9 +536,13 @@ func (e *Editor) openPrompt(k promptKind, initial string) {
 func (e *Editor) setInput(s string) {
 	e.input = s
 	switch e.prompt {
-	case promptFind:
+	case promptFind, promptReplace:
 		e.findQuery = s
 		e.find(e.findOrigin, false)
+	case promptWith:
+		e.replaceBy = s
+	case promptGrep:
+		e.grep.start(e.root, s)
 	case promptFiles:
 		e.finder.query, e.finder.sel = s, 0
 		e.finder.rank()
@@ -591,7 +604,103 @@ func (e *Editor) submitPrompt() {
 		if f := &e.finder; f.sel < len(f.results) {
 			e.open(filepath.Join(f.root, filepath.FromSlash(f.results[f.sel].path)))
 		}
+	case promptReplace:
+		e.prompt = promptReplace
+		if _, _, ok := e.sel(); ok && !e.notFound && e.findQuery != "" {
+			e.openPrompt(promptWith, e.replaceBy)
+		}
+	case promptWith:
+		e.prompt = promptWith // keep replacing with Enter
+		e.replaceNext()
+	case promptGrep:
+		e.prompt = promptGrep
+		if g := &e.grep; g.sel < len(g.hits) {
+			e.prompt = promptNone
+			e.openHit(g.root, g.query, g.hits[g.sel])
+		}
 	}
+}
+
+// openReplace asks what to replace, starting from the selection.
+func (e *Editor) openReplace() {
+	q := e.findQuery
+	if a, b, ok := e.sel(); ok && a.Line == b.Line {
+		q = e.buf.Text(a, b)
+	}
+	e.openPrompt(promptReplace, q)
+	e.findQuery = q
+	if a, _, ok := e.sel(); !ok || e.buf.Text(a, endOf(a, q)) != q {
+		e.find(e.findOrigin, false)
+	}
+}
+
+// isMatch reports whether [a, b) is a match of the find query.
+func (e *Editor) isMatch(a, b Pos) bool {
+	q := e.findQuery
+	if q == "" || a.Line != b.Line {
+		return false
+	}
+	t := e.buf.Text(a, b)
+	return len(t) == len(q) && matcher(q)(t) == 0
+}
+
+// replaceNext replaces the selected match and selects the next one.
+func (e *Editor) replaceNext() {
+	if e.locked() {
+		return
+	}
+	if a, b, ok := e.sel(); ok && e.isMatch(a, b) {
+		e.moveTo(e.buf.Replace(a, b, e.replaceBy, e.cursor), false)
+	}
+	e.find(e.cursor, false)
+}
+
+// replaceAll replaces every match in the file.
+func (e *Editor) replaceAll() {
+	if e.locked() {
+		return
+	}
+	n := e.buf.ReplaceAll(e.findQuery, e.replaceBy, e.cursor)
+	e.prompt = promptNone
+	c := e.buf.Clamp(e.cursor)
+	for l := e.buf.Line(c.Line); c.Col > 0 && c.Col < len(l) && !utf8.RuneStart(l[c.Col]); {
+		c.Col--
+	}
+	e.cursor, e.anchor = c, c
+	switch n {
+	case 0:
+		e.flash("no matches", true)
+	case 1:
+		e.flash("replaced 1 match", false)
+	default:
+		e.flash("replaced "+groupDigits(int64(n))+" matches", false)
+	}
+}
+
+// openGrep asks what to search the folder for. The last search stays
+// listed if the query is the same.
+func (e *Editor) openGrep() {
+	q := e.grep.query
+	if a, b, ok := e.sel(); ok && a.Line == b.Line {
+		q = e.buf.Text(a, b)
+	}
+	e.openPrompt(promptGrep, q)
+	if g := &e.grep; q != g.query || e.root != g.root || g.stop == nil {
+		g.start(e.root, q)
+	}
+}
+
+// openHit opens the file of a search hit with the match selected, and
+// makes ⌘F and F3 go on from there.
+func (e *Editor) openHit(root, q string, h hit) {
+	path := filepath.Join(root, filepath.FromSlash(h.path))
+	e.open(path)
+	if e.path != path || e.dir != nil {
+		return
+	}
+	e.findQuery = q
+	e.pending = &place{Line: h.line, Col: h.at, Select: len(q)}
+	e.applyPending()
 }
 
 // dirPrefix is a folder path for the open prompt, ending in a separator.
@@ -613,7 +722,7 @@ var navKeys = []key.Name{
 	key.NameTab, key.NameEscape, key.NameF3,
 }
 
-var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0"}
+var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0"}
 
 func (e *Editor) filters() []event.Filter {
 	fs := []event.Filter{
@@ -823,12 +932,20 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 				e.Quit()
 			}
 		case "F":
+			if shift {
+				e.openGrep()
+				break
+			}
 			q := e.findQuery
 			if a, b, ok := e.sel(); ok && a.Line == b.Line {
 				q = e.buf.Text(a, b)
 			}
 			e.openPrompt(promptFind, q)
 			e.findQuery = q
+		case "R":
+			e.openReplace()
+		case "T":
+			e.openTerminal()
 		case "G":
 			e.openPrompt(promptGoto, "")
 		case "D":
@@ -979,9 +1096,12 @@ func (e *Editor) promptKey(k key.Event) bool {
 	case key.NameEscape:
 		e.prompt = promptNone
 	case key.NameReturn, key.NameEnter:
-		if e.prompt == promptFind && k.Modifiers.Contain(key.ModShift) {
+		switch {
+		case (e.prompt == promptFind || e.prompt == promptReplace) && k.Modifiers.Contain(key.ModShift):
 			e.findNext(true)
-		} else {
+		case e.prompt == promptWith && k.Modifiers.Contain(key.ModShortcut):
+			e.replaceAll()
+		default:
 			e.submitPrompt()
 		}
 	case key.NameDeleteBackward:
@@ -991,7 +1111,23 @@ func (e *Editor) promptKey(k key.Event) bool {
 			_, n := utf8.DecodeLastRuneInString(e.input)
 			e.setInput(e.input[:len(e.input)-n])
 		}
+	case key.NamePageUp, key.NamePageDown:
+		if g := &e.grep; e.prompt == promptGrep {
+			d := e.grepRows()
+			if k.Name == key.NamePageUp {
+				d = -d
+			}
+			g.sel = max(0, min(g.sel+d, len(g.hits)-1))
+		}
 	case key.NameUpArrow, key.NameDownArrow, key.NameF3:
+		if g := &e.grep; e.prompt == promptGrep {
+			if k.Name == key.NameUpArrow {
+				g.sel = max(g.sel-1, 0)
+			} else {
+				g.sel = max(0, min(g.sel+1, len(g.hits)-1))
+			}
+			return true
+		}
 		if f := &e.finder; e.prompt == promptFiles {
 			// The best match is at the bottom, next to the prompt.
 			if k.Name == key.NameUpArrow {
@@ -1001,20 +1137,20 @@ func (e *Editor) promptKey(k key.Event) bool {
 			}
 			return true
 		}
-		if e.prompt != promptFind {
+		if e.prompt != promptFind && e.prompt != promptReplace && e.prompt != promptWith {
 			return true
 		}
 		e.findNext(k.Name == key.NameUpArrow || k.Modifiers.Contain(key.ModShift))
 	case "V":
 		return false // the editor requests the clipboard; paste() fills the prompt
 	case "F":
-		if e.prompt == promptFind {
+		if e.prompt == promptFind && !k.Modifiers.Contain(key.ModShift) {
 			e.findNext(false)
 			return true
 		}
 		e.prompt = promptNone
 		return false
-	case "A", "C", "X", "Z", "Y", "S", "O", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0":
+	case "A", "C", "X", "Z", "Y", "S", "O", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0":
 		// Any other shortcut closes the prompt and runs normally.
 		e.prompt = promptNone
 		return false
@@ -1122,6 +1258,11 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	if e.buf.Poll() {
 		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(30 * time.Millisecond)})
 	}
+	if e.prompt == promptGrep {
+		if _, running := e.grep.poll(); running {
+			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(50 * time.Millisecond)})
+		}
+	}
 	if e.prompt == promptFiles {
 		changed, walking := e.finder.poll()
 		if changed {
@@ -1164,6 +1305,8 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 
 	if e.prompt == promptFiles {
 		e.drawFinder(gtx, size.X, textH)
+	} else if e.prompt == promptGrep {
+		e.drawGrep(gtx, size.X, textH)
 	} else if e.info {
 		e.drawInfo(gtx, size.X, textH)
 	}
@@ -1238,7 +1381,7 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 	v1 := v0 + int(float32(e.viewW)/e.charW) + 2
 
 	q := ""
-	if e.prompt == promptFind && !strings.Contains(e.findQuery, "\n") {
+	if (e.prompt == promptFind || e.prompt == promptReplace || e.prompt == promptWith) && !strings.Contains(e.findQuery, "\n") {
 		q = e.findQuery
 	}
 	var index func(string) int
@@ -1383,7 +1526,19 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 			right = "scanning…  " + right
 		}
 	}
-	if a, b, ok := e.sel(); ok && e.prompt != promptFiles {
+	if g := &e.grep; e.prompt == promptGrep {
+		right = fmt.Sprintf("%s lines in %s files", groupDigits(int64(len(g.hits))), groupDigits(int64(g.files)))
+		switch {
+		case g.results != nil:
+			right = fmt.Sprintf("searching %s files…  ", groupDigits(g.searched.Load())) + right
+		case len(g.hits) >= maxHits:
+			right = "first " + right
+		}
+	}
+	if e.prompt == promptWith {
+		right = "Enter replace · " + shortcutName + "Enter all · ↓ skip"
+	}
+	if a, b, ok := e.sel(); ok && e.prompt != promptFiles && e.prompt != promptGrep && e.prompt != promptWith {
 		if a.Line == b.Line {
 			right = fmt.Sprintf("(%d sel)  ", utf8.RuneCountInString(e.buf.Text(a, b))) + right
 		} else {
@@ -1396,6 +1551,9 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	x := r.Min.X + pad
 	if e.prompt != promptNone {
 		lbl := promptLabels[e.prompt] + " ›"
+		if e.prompt == promptWith {
+			lbl = "replace " + truncLeft(e.findQuery, 30) + " with ›"
+		}
 		c := colAccent
 		if e.notFound {
 			c = colWarn

@@ -16,6 +16,7 @@ type place struct {
 	Col    int     `json:"col"`
 	Scroll float64 `json:"scroll"`
 	End    bool    `json:"-"` // follow the end of the file
+	Select int     `json:"-"` // select this many bytes from Col
 }
 
 type session struct {
@@ -118,6 +119,11 @@ func (e *Editor) applyPending() {
 		e.cursor = e.buf.End()
 		e.cursor.Col = 0
 		e.followCursor = true
+	} else if p.Select > 0 {
+		e.anchor = e.buf.Clamp(Pos{p.Line, p.Col})
+		e.cursor = e.buf.Clamp(Pos{p.Line, p.Col + p.Select})
+		e.followCursor = true
+		return
 	} else {
 		e.cursor = e.buf.Clamp(Pos{p.Line, p.Col})
 		e.scrollY = p.Scroll

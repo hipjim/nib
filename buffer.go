@@ -29,6 +29,13 @@ type edit struct {
 	before, after Pos // cursor before and after the edit
 	at            time.Time
 	id            int
+	lines         []lineEdit // set instead of the above for a replace-all
+}
+
+// lineEdit is one line changed by a replace-all.
+type lineEdit struct {
+	line     int
+	old, new string
 }
 
 // Buffer holds the document as lines without terminators.
@@ -236,7 +243,11 @@ func (b *Buffer) Undo() (Pos, bool) {
 	}
 	e := b.undo[len(b.undo)-1]
 	b.undo = b.undo[:len(b.undo)-1]
-	b.replace(e.start, endOf(e.start, e.new), e.old)
+	if e.lines != nil {
+		b.setLines(e.lines, false)
+	} else {
+		b.replace(e.start, endOf(e.start, e.new), e.old)
+	}
 	b.redo = append(b.redo, e)
 	return e.before, true
 }
@@ -247,10 +258,66 @@ func (b *Buffer) Redo() (Pos, bool) {
 	}
 	e := b.redo[len(b.redo)-1]
 	b.redo = b.redo[:len(b.redo)-1]
-	b.replace(e.start, endOf(e.start, e.old), e.new)
+	if e.lines != nil {
+		b.setLines(e.lines, true)
+	} else {
+		b.replace(e.start, endOf(e.start, e.old), e.new)
+	}
 	e.at = time.Time{} // never merge a redone edit
 	b.undo = append(b.undo, e)
 	return e.after, true
+}
+
+// ReplaceAll replaces every match of q with r as one undo step and returns
+// how many it replaced. Neither may contain a newline, so line numbers stay
+// the same and only the lines with a match are touched.
+func (b *Buffer) ReplaceAll(q, r string, cursor Pos) int {
+	if q == "" || strings.Contains(q, "\n") || strings.Contains(r, "\n") {
+		return 0
+	}
+	index := matcher(q)
+	lines := b.lines.matchingLines(index)
+	if len(lines) == 0 {
+		return 0
+	}
+	changes := make([]lineEdit, len(lines))
+	n := 0
+	var sb strings.Builder
+	for i, l := range lines {
+		old := b.Line(l)
+		sb.Reset()
+		for s := old; ; {
+			j := index(s)
+			if j < 0 {
+				sb.WriteString(s)
+				break
+			}
+			sb.WriteString(s[:j])
+			sb.WriteString(r)
+			s = s[j+len(q):]
+			n++
+		}
+		changes[i] = lineEdit{l, old, sb.String()}
+	}
+	b.setLines(changes, true)
+	b.redo = b.redo[:0]
+	b.nextID++
+	// A zero time keeps the next typing from merging into this step.
+	b.undo = append(b.undo, edit{lines: changes, before: cursor, after: cursor, id: b.nextID})
+	return n
+}
+
+// setLines puts the new (or, undoing, the old) text of each changed line.
+func (b *Buffer) setLines(changes []lineEdit, redo bool) {
+	for _, c := range changes {
+		s := c.old
+		if redo {
+			s = c.new
+		}
+		b.lines.replace(c.line, c.line, []string{s})
+	}
+	b.version++
+	b.edited = min(b.edited, changes[0].line)
 }
 
 // Find searches for q starting at from, wrapping around. Lower-case queries

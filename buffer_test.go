@@ -172,3 +172,17 @@ func BenchmarkSaveBig(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkReplaceAllBig(b *testing.B) {
+	for _, c := range []struct{ q, r string }{{"zqxjv", "x"}, {"the", "THE"}} {
+		b.Run(c.q, func(b *testing.B) {
+			for b.Loop() {
+				b.StopTimer()
+				buf := loadAll(b)
+				b.StartTimer()
+				n := buf.ReplaceAll(c.q, c.r, Pos{})
+				b.ReportMetric(float64(n), "matches")
+			}
+		})
+	}
+}

@@ -235,3 +235,67 @@ func horspool(s, q string, fold bool) int {
 	}
 	return -1
 }
+
+// matchingLines returns, in order, every line with a match, searching
+// chunks on all cores.
+func (s *lineStore) matchingLines(index func(string) int) []int {
+	var chunks []lineRange
+	for a := 0; a < s.count; a += searchChunk {
+		chunks = append(chunks, lineRange{a, min(s.count, a+searchChunk)})
+	}
+	found := make([][]int, len(chunks))
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for range min(runtime.NumCPU(), len(chunks)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			debug.SetPanicOnFault(true) // the mapped file may be truncated
+			defer func() { recover() }()
+			for {
+				i := int(next.Add(1) - 1)
+				if i >= len(chunks) {
+					return
+				}
+				found[i] = s.linesIn(chunks[i], index)
+			}
+		}()
+	}
+	wg.Wait()
+	var lines []int
+	for _, f := range found {
+		lines = append(lines, f...)
+	}
+	return lines
+}
+
+// linesIn returns the lines in [r.a, r.b) with a match. Like searchRange,
+// it searches unedited blocks as one piece of the file.
+func (s *lineStore) linesIn(r lineRange, index func(string) int) []int {
+	var lines []int
+	bi := sort.Search(len(s.blocks), func(x int) bool { return s.first[x] > r.a }) - 1
+	for ; bi < len(s.blocks) && s.first[bi] < r.b; bi++ {
+		k := s.blocks[bi]
+		j0 := max(r.a, s.first[bi]) - s.first[bi]
+		j1 := min(r.b, s.first[bi]+k.n()) - s.first[bi]
+		if k.idx == nil {
+			for j := j0; j < j1; j++ {
+				if index(k.lines[j]) >= 0 {
+					lines = append(lines, s.first[bi]+j)
+				}
+			}
+			continue
+		}
+		start, end := k.base+int(k.idx[j0]), k.base+int(k.idx[j1])-1
+		for o := start; o < end; {
+			m := index(s.data[o:end])
+			if m < 0 {
+				break
+			}
+			p := s.posIn(k, bi, -1, o+m)
+			lines = append(lines, p.Line)
+			o = k.base + int(k.idx[p.Line-s.first[bi]+1]) // the next line
+		}
+	}
+	return lines
+}
