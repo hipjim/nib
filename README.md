@@ -18,8 +18,9 @@ install.
   6 GB for the same file ([numbers below](#compared-to-zed)).
 - **Small and light.** Memory stays at 110–280 MB whether the file is 3 KB or
   2 GB. A frame takes about 0.1 ms to lay out.
-- **A real editor.** Undo, several open files, find, syntax highlighting,
-  folder browsing and a fuzzy file finder, with keys you already know.
+- **A real editor.** Undo, several open files, find and replace, search across
+  a folder, syntax highlighting, folder browsing and a fuzzy file finder, with
+  keys you already know.
 - **Never loses work.** It asks before quitting with unsaved files, restores
   your last session, and reloads files that change on disk.
 
@@ -74,6 +75,20 @@ dedenting blocks, moving and duplicating lines, copying the whole line when
 nothing is selected, and `⌘D` to select the next occurrence of a word. Tabs or
 spaces and LF or CRLF line endings are detected and kept.
 
+### Find, replace and search the folder
+
+- **`⌘F`** finds as you type, from the cursor; `Enter` goes to the next match.
+- **`⌘R`** replaces: type what to find, `Enter`, then the replacement. `Enter`
+  replaces the selected match and moves on, `↓` skips it, and `⌘Enter`
+  replaces every match in the file as one undo step (a million matches in a
+  100 MB file take a quarter of a second).
+- **`⌘⇧F`** searches every file under the folder as you type and lists each
+  matching line. `Enter` opens the file with the match selected, and `F3`
+  goes on to the next one in that file. Binary files, `.git`, `node_modules`
+  and `.gitignore` matches are skipped.
+
+A lower-case query ignores case; one with a capital letter matches exactly.
+
 ### Syntax highlighting
 
 Comments, strings, numbers and keywords for Go, C/C++, Rust,
@@ -96,6 +111,12 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
   `node_modules` and `.gitignore` matches, and ranks 67,000 paths in under 8 ms.
 - **`⌘I`** shows a file's properties: size, lines, created, modified and
   accessed times, permissions and owner.
+
+**`⌘T`** opens a terminal in the folder of the current file (or of the
+listing). On macOS it opens the terminal app quod was started from (Terminal,
+iTerm, Ghostty, WezTerm or Warp), else Terminal; on Linux `$TERMINAL` or the
+first one installed; on Windows, Windows Terminal or `cmd`. Set
+`QUOD_TERMINAL` to choose another: an app name on macOS, a command elsewhere.
 
 Open files stay open in the background with their cursor, undo history and
 unsaved edits; `⌘P` lists them first.
@@ -120,9 +141,12 @@ unsaved edits; `⌘P` lists them first.
 | `⌘O` | open a file or folder by path (`Tab` completes) |
 | `⌘E` | show the current file's folder |
 | `⌘I` | file properties |
+| `⌘T` | open a terminal in the file's folder |
 | `⌘W` | close the file |
 | `⌘Q` | quit (asks if anything is unsaved) |
 | `⌘F`, then `Enter` / `⇧Enter` / `F3` | find next / previous (a lower-case query ignores case) |
+| `⌘R`, then `Enter` / `⌘Enter` / `↓` | replace this match / all of them / skip |
+| `⌘⇧F` | search every file in the folder (`↑` / `↓` pick, `Enter` opens) |
 | `⌘G` | go to `line[:col]` |
 | `⌘Z` / `⌘⇧Z` / `⌘Y` | undo / redo |
 | `⌘C` / `⌘X` / `⌘V` | copy / cut / paste (no selection: the whole line) |
@@ -149,6 +173,11 @@ anywhere on it to jump there.
 - **Find searches whole pieces of the file on all cores**, jumping between the
   query's rarest byte, or skipping ahead Horspool-style when every byte is
   common. Searching all of a 2 GB file takes 25–230 ms.
+- **Replacing all** finds the matching lines on all cores and changes only
+  those lines.
+- **Searching the folder** reads files a megabyte at a time on all cores,
+  while the folder is still being listed: 40,000 files (1.7 GB) in under a
+  second once listed.
 - **Saving writes unedited parts straight from the original file**: 2 GB in 1.3 s.
 - **Highlighting scans only the visible lines** and remembers multi-line
   comments and strings every 1,024 lines.
