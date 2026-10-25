@@ -108,6 +108,8 @@ type Editor struct {
 	dragging   bool
 	lastClick  time.Time
 	clicks     int
+	shiftTap   time.Time // when Shift was last tapped alone; zero if not
+	shiftClean bool      // Shift is down and nothing else was pressed yet
 	blinkStart time.Time
 	focused    bool
 	started    bool
@@ -621,6 +623,7 @@ func (e *Editor) filters() []event.Filter {
 	for _, n := range navKeys {
 		fs = append(fs, key.Filter{Focus: e, Name: n, Optional: anyMods})
 	}
+	fs = append(fs, key.Filter{Focus: e, Name: key.NameShift, Optional: anyMods})
 	for _, n := range shortcutKeys {
 		fs = append(fs, key.Filter{Focus: e, Name: n, Required: key.ModShortcut, Optional: key.ModShift})
 	}
@@ -641,7 +644,12 @@ func (e *Editor) events(gtx layout.Context) {
 			}
 			e.focused = ev.Focus
 		case key.Event:
+			if ev.Name == key.NameShift {
+				e.shiftKey(gtx, ev)
+				continue
+			}
 			if ev.State == key.Press {
+				e.shiftClean, e.shiftTap = false, time.Time{}
 				e.msg = ""
 				discard := e.discardOK
 				e.discardOK = false
@@ -651,6 +659,7 @@ func (e *Editor) events(gtx layout.Context) {
 				e.key(gtx, ev, discard)
 			}
 		case key.EditEvent:
+			e.shiftClean, e.shiftTap = false, time.Time{}
 			e.msg = ""
 			if e.prompt != promptNone {
 				e.setInput(e.input + ev.Text)
@@ -705,6 +714,7 @@ func (e *Editor) pointer(gtx layout.Context, ev pointer.Event) {
 		}
 		gtx.Execute(key.FocusCmd{Tag: e})
 		e.blinkStart = gtx.Now
+		e.shiftClean, e.shiftTap = false, time.Time{} // Shift-click is not a tap
 		p := e.posAt(ev.Position)
 		if gtx.Now.Sub(e.lastClick) < 400*time.Millisecond && p.Line == e.cursor.Line {
 			e.clicks++
@@ -742,6 +752,30 @@ func (e *Editor) posAt(pt f32.Point) Pos {
 	l = max(0, min(l, e.buf.LineCount()-1))
 	x := (pt.X - float32(e.textX) + e.scrollX) / e.charW
 	return Pos{l, colAt(e.buf.Line(l), x)}
+}
+
+// shiftKey opens the file finder when Shift is tapped twice in a row with
+// no other key, like Shift Shift in JetBrains IDEs, and closes it again.
+func (e *Editor) shiftKey(gtx layout.Context, k key.Event) {
+	if k.State == key.Press {
+		e.shiftClean = true
+		return
+	}
+	if !e.shiftClean {
+		return
+	}
+	e.shiftClean = false
+	if gtx.Now.Sub(e.shiftTap) > 400*time.Millisecond {
+		e.shiftTap = gtx.Now
+		return
+	}
+	e.shiftTap = time.Time{}
+	e.msg = ""
+	if e.prompt == promptFiles {
+		e.prompt = promptNone
+	} else {
+		e.openFinder()
+	}
 }
 
 func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"gioui.org/f32"
 	"gioui.org/io/key"
@@ -187,5 +188,39 @@ func TestScrollbar(t *testing.T) {
 	}
 	if got, want := e.posAt(f32.Pt(0, 0)).Line, int(e.scrollY)/e.lineH; got != want {
 		t.Fatalf("top line %d, want %d", got, want)
+	}
+}
+
+func TestDoubleShift(t *testing.T) {
+	e := newTestEditor("x", Pos{})
+	e.root, e.docs = t.TempDir(), []*doc{e.doc}
+	now := time.Now()
+	tap := func(ms int) {
+		gtx := layout.Context{Now: now.Add(time.Duration(ms) * time.Millisecond)}
+		e.shiftKey(gtx, key.Event{Name: key.NameShift, State: key.Press})
+		e.shiftKey(gtx, key.Event{Name: key.NameShift, State: key.Release})
+	}
+	tap(0)
+	tap(500) // too slow: starts over
+	if e.prompt != promptNone {
+		t.Fatal("slow taps opened the finder")
+	}
+	tap(700)
+	if e.prompt != promptFiles {
+		t.Fatal("double Shift did not open the finder")
+	}
+	tap(2000)
+	tap(2200)
+	if e.prompt != promptNone {
+		t.Fatal("double Shift did not close the finder")
+	}
+	// Shift held for a capital letter is not a tap.
+	gtx := layout.Context{Now: now.Add(3 * time.Second)}
+	e.shiftKey(gtx, key.Event{Name: key.NameShift, State: key.Press})
+	e.shiftClean = false // what an EditEvent does
+	e.shiftKey(gtx, key.Event{Name: key.NameShift, State: key.Release})
+	tap(3100)
+	if e.prompt != promptNone {
+		t.Fatal("Shift+letter counted as a tap")
 	}
 }

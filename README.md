@@ -91,8 +91,8 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 
 - **Folders** open as a listing with size, modified and created dates. `Enter`
   opens, `←` or `Backspace` goes up, and `⌘E` jumps from a file to its folder.
-- **`⌘P`** finds any file under the folder from a few letters of its path,
-  like fzf. It walks the folder in the background, skips `.git`,
+- **`⌘P`**, or tapping Shift twice, finds any file under the folder from a
+  few letters of its path, like fzf. It walks the folder in the background, skips `.git`,
   `node_modules` and `.gitignore` matches, and ranks 67,000 paths in under 8 ms.
 - **`⌘I`** shows a file's properties: size, lines, created, modified and
   accessed times, permissions and owner.
@@ -116,7 +116,7 @@ unsaved edits; `⌘P` lists them first.
 | Key | Action |
 | --- | --- |
 | `⌘S` / `⌘⇧S` | save / save as |
-| `⌘P` | find a file in the folder (`↑` / `↓` pick, `Enter` opens) |
+| `⌘P` or `⇧⇧` | find a file in the folder (`↑` / `↓` pick, `Enter` opens) |
 | `⌘O` | open a file or folder by path (`Tab` completes) |
 | `⌘E` | show the current file's folder |
 | `⌘I` | file properties |
