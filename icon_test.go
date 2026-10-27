@@ -3,18 +3,15 @@ package main
 import (
 	"image"
 	"image/png"
+	"math"
 	"os"
 	"testing"
 
-	"gioui.org/font"
+	"gioui.org/f32"
 	"gioui.org/gpu/headless"
-	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
-	"gioui.org/text"
-	"gioui.org/unit"
-	"gioui.org/widget"
 )
 
 // TestIcon draws the app icon. Set NIB_ICON=appicon.png to write it.
@@ -29,42 +26,48 @@ func TestIcon(t *testing.T) {
 		t.Skip("no GPU:", err)
 	}
 	defer win.Release()
-	var ops op.Ops
-	gtx := layout.Context{
-		Ops:         &ops,
-		Metric:      unit.Metric{PxPerDp: 1, PxPerSp: 1},
-		Constraints: layout.Exact(image.Pt(size, size)),
-	}
+	ops := new(op.Ops)
 
-	// A rounded square on Apple's icon grid, with a thin edge.
+	// A rounded square on Apple's icon grid, with a thin edge and a soft
+	// top-to-bottom shade.
 	const inset, radius = 100, 185
 	body := image.Rect(inset, inset, size-inset, size-inset)
-	paint.FillShape(gtx.Ops, rgb(0x232a33), clip.UniformRRect(body, radius).Op(gtx.Ops))
-	paint.FillShape(gtx.Ops, colBg, clip.UniformRRect(body.Inset(6), radius-6).Op(gtx.Ops))
-
-	// A bold "n" and a block cursor after it.
-	shaper := text.NewShaper(text.NoSystemFonts(), text.WithCollection(fontCollection()))
-	f := font.Font{Typeface: typeface, Weight: font.Bold}
-	m := op.Record(gtx.Ops)
-	paint.ColorOp{Color: colAccent}.Add(gtx.Ops)
-	col := m.Stop()
-	g := gtx
-	g.Constraints = layout.Constraints{Max: image.Pt(size, size)}
-	m = op.Record(gtx.Ops)
-	dims := widget.Label{MaxLines: 1}.Layout(g, shaper, f, 620, "n", col)
-	call := m.Stop()
-	// Center the mark between the x-height and the baseline, where the
-	// cursor runs too.
-	const xHeight, curW, gap = 0.55 * 620, 170, 36
-	base := size/2 + int(xHeight)/2
-	x := (size - dims.Size.X - gap - curW) / 2
-	st := op.Offset(image.Pt(x, base-(dims.Size.Y-dims.Baseline))).Push(gtx.Ops)
-	call.Add(gtx.Ops)
+	paint.FillShape(ops, rgb(0x2a323d), clip.UniformRRect(body, radius).Op(ops))
+	st := clip.UniformRRect(body.Inset(5), radius-5).Push(ops)
+	paint.LinearGradientOp{
+		Stop1: f32.Pt(0, inset), Color1: rgb(0x1a2029),
+		Stop2: f32.Pt(0, size-inset), Color2: rgb(0x07090c),
+	}.Add(ops)
+	paint.PaintOp{}.Add(ops)
 	st.Pop()
-	cx := x + dims.Size.X + gap
-	paint.FillShape(gtx.Ops, colAccent, clip.Rect(image.Rect(cx, base-int(xHeight), cx+curW, base)).Op())
 
-	if err := win.Frame(&ops); err != nil {
+	// A fountain-pen nib, drawn pointing down around (0, 0) and turned to
+	// write toward the lower left.
+	tr := op.Affine(f32.Affine2D{}.Rotate(f32.Pt(0, 0), math.Pi/4).Offset(f32.Pt(size/2+10, size/2-10))).Push(ops)
+	var p clip.Path
+	p.Begin(ops)
+	p.MoveTo(f32.Pt(-150, -230))
+	p.LineTo(f32.Pt(150, -230))
+	p.QuadTo(f32.Pt(190, -60), f32.Pt(110, 70))
+	p.LineTo(f32.Pt(0, 290))
+	p.LineTo(f32.Pt(-110, 70))
+	p.QuadTo(f32.Pt(-190, -60), f32.Pt(-150, -230))
+	p.Close()
+	st = clip.Outline{Path: p.End()}.Op().Push(ops)
+	paint.LinearGradientOp{
+		Stop1: f32.Pt(0, -230), Color1: rgb(0x6ff5c4),
+		Stop2: f32.Pt(0, 290), Color2: rgb(0x22c98d),
+	}.Add(ops)
+	paint.PaintOp{}.Add(ops)
+	st.Pop()
+	// The collar, the breather hole and the slit to the tip.
+	cut := rgb(0x0d1014)
+	paint.FillShape(ops, cut, clip.Rect(image.Rect(-160, -175, 160, -160)).Op())
+	paint.FillShape(ops, cut, clip.Ellipse(image.Rect(-38, -68, 38, 8)).Op(ops))
+	paint.FillShape(ops, cut, clip.Rect(image.Rect(-7, -30, 7, 292)).Op())
+	tr.Pop()
+
+	if err := win.Frame(ops); err != nil {
 		t.Fatal(err)
 	}
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
