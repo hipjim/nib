@@ -20,8 +20,10 @@ func mayQuit() bool {
 		return true
 	}
 	quitAsked.Store(true)
+	// Not inline: on macOS this runs on the main thread, where Gio's
+	// Invalidate deadlocks on its own lock.
 	if w := wake.Load(); w != nil {
-		(*w)()
+		go (*w)()
 	}
 	return false
 }
