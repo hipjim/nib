@@ -6,8 +6,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
@@ -57,6 +59,12 @@ func (f *finder) start(root string) {
 	}
 	if f.stop != nil {
 		f.stop.Store(true)
+		if old := f.walking; old != nil {
+			go func() {
+				for range old {
+				}
+			}()
+		}
 	}
 	stop := new(atomic.Bool)
 	ch := make(chan []string, 8)
@@ -67,35 +75,68 @@ func (f *finder) start(root string) {
 func walk(root string, ch chan<- []string, stop *atomic.Bool) {
 	defer close(ch)
 	ignore := readIgnore(filepath.Join(root, ".gitignore"))
-	batch := make([]string, 0, walkBatch)
-	n := 0
-	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if stop.Load() || n >= maxFiles {
-			return filepath.SkipAll
-		}
-		if err != nil || p == root {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, p)
-		rel = filepath.ToSlash(rel)
-		if skipDirs[d.Name()] || ignore.match(rel, d.IsDir()) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() {
-			return nil
-		}
-		batch = append(batch, rel)
-		n++
-		if len(batch) == walkBatch {
+	var (
+		mu    sync.Mutex
+		batch = make([]string, 0, walkBatch)
+		n     atomic.Int64
+		wg    sync.WaitGroup
+		read  = make(chan struct{}, 2*runtime.NumCPU()) // folders read at once
+	)
+	add := func(files []string) {
+		mu.Lock()
+		defer mu.Unlock()
+		batch = append(batch, files...)
+		if len(batch) >= walkBatch {
 			ch <- batch
 			batch = make([]string, 0, walkBatch)
 		}
-		return nil
-	})
+	}
+	var visit func(rel string)
+	visit = func(rel string) {
+		defer wg.Done()
+		if stop.Load() || n.Load() >= maxFiles {
+			return
+		}
+		read <- struct{}{}
+		entries, err := readDirFast(filepath.Join(root, filepath.FromSlash(rel)))
+		<-read
+		if err != nil {
+			return
+		}
+		var files []string
+		for _, d := range entries {
+			p := d.Name()
+			if rel != "" {
+				p = rel + "/" + p
+			}
+			if skipDirs[d.Name()] || ignore.match(p, d.IsDir()) {
+				continue
+			}
+			if d.IsDir() {
+				wg.Add(1)
+				go visit(p)
+			} else {
+				files = append(files, p)
+			}
+		}
+		if len(files) > 0 && n.Add(int64(len(files))) <= maxFiles {
+			add(files)
+		}
+	}
+	wg.Add(1)
+	visit("")
+	wg.Wait()
 	ch <- batch
+}
+
+// readDirFast lists a folder without sorting it.
+func readDirFast(dir string) ([]fs.DirEntry, error) {
+	f, err := os.Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.ReadDir(-1)
 }
 
 // poll takes in walked paths. It reports whether new ones arrived and
@@ -106,6 +147,7 @@ func (f *finder) poll() (changed, walking bool) {
 		case b, ok := <-f.walking:
 			if !ok {
 				f.walking = nil
+				slices.Sort(f.paths) // folders are listed in parallel, in no order
 				return true, false
 			}
 			f.paths = append(f.paths, b...)

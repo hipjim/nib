@@ -5,10 +5,12 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 )
@@ -52,34 +54,92 @@ type lineStore struct {
 func (s *lineStore) init(data string) {
 	*s = lineStore{data: data, crlf: strings.Contains(data[:min(len(data), 64<<10)], "\r\n")}
 	if len(data) < asyncMin {
-		indexLines(data, &s.progress, func(bs []*block) { s.appendBlocks(bs) })
+		indexLines(data, 0, len(data), true, &s.progress, func(bs []*block) { s.appendBlocks(bs) })
 		return
 	}
 	ch := make(chan []*block, 4)
-	go func() {
-		debug.SetPanicOnFault(true) // the mapped file may be truncated under us
-		defer func() {
-			recover()
-			close(ch)
-		}()
-		indexLines(data, &s.progress, func(bs []*block) { ch <- bs })
-	}()
+	go indexParallel(data, &s.progress, ch)
 	s.appendBlocks(<-ch) // show the first screen right away
 	s.loading = ch
+}
+
+// indexParallel indexes data on all cores, one piece each, and sends the
+// blocks in file order on ch. The first piece streams its blocks so the
+// first screen shows up right away; the others keep theirs until it is
+// their turn.
+func indexParallel(data string, progress *atomic.Int64, ch chan<- []*block) {
+	defer close(ch)
+	cuts := []int{0}
+	n := runtime.NumCPU()
+	for k := 1; k < n; k++ {
+		at := max(cuts[len(cuts)-1], k*len(data)/n)
+		if nl := strings.IndexByte(data[at:], '\n'); nl >= 0 && at+nl+1 < len(data) {
+			cuts = append(cuts, at+nl+1) // pieces start at a line start
+		}
+	}
+	cuts = slices.Compact(append(cuts, len(data)))
+	type piece struct {
+		blocks [][]*block
+		ok     bool // indexed without a fault
+		done   chan struct{}
+	}
+	pieces := make([]piece, len(cuts)-1)
+	run := func(k int, emit func([]*block)) {
+		p := &pieces[k]
+		go func() {
+			debug.SetPanicOnFault(true) // the mapped file may be truncated under us
+			defer func() {
+				recover()
+				close(p.done)
+			}()
+			indexLines(data, cuts[k], cuts[k+1], k == len(pieces)-1, progress, emit)
+			p.ok = true
+		}()
+	}
+	for k := range pieces {
+		pieces[k].done = make(chan struct{})
+	}
+	// The other pieces start once the first screen is out, so they do not
+	// slow it down by faulting in the file at the same time.
+	var others sync.Once
+	run(0, func(bs []*block) {
+		ch <- bs
+		others.Do(func() {
+			for k := 1; k < len(pieces); k++ {
+				run(k, func(bs []*block) { pieces[k].blocks = append(pieces[k].blocks, bs) })
+			}
+		})
+	})
+	for k := range pieces {
+		p := &pieces[k]
+		<-p.done
+		for _, bs := range p.blocks {
+			ch <- bs
+		}
+		if !p.ok {
+			return // stop at the first piece that could not be read
+		}
+	}
 }
 
 // maxSpan is the most file bytes one block may cover, since offsets are
 // 32-bit. It is a variable so tests can make it small.
 var maxSpan = math.MaxUint32
 
-// indexLines finds line starts in data and emits them in batches of blocks.
-func indexLines(data string, progress *atomic.Int64, emit func([]*block)) {
+// indexLines finds the line starts in data[from:to], from being a line
+// start, and emits them in batches of blocks. Unless the piece is the last
+// one, to is a line start too.
+func indexLines(data string, from, to int, last bool, progress *atomic.Int64, emit func([]*block)) {
 	newBlock := func(base int) *block { return &block{base: base, idx: make([]uint32, 1, blockLines+1)} }
-	cur := newBlock(0)
+	cur := newBlock(from)
 	var batch []*block
-	sent := 0
-	for pos := 0; ; {
-		k := strings.IndexByte(data[pos:], '\n')
+	sent, reported := 0, from
+	report := func(pos int) {
+		progress.Add(int64(pos - reported))
+		reported = pos
+	}
+	for pos := from; pos < to; {
+		k := strings.IndexByte(data[pos:to], '\n')
 		if k < 0 {
 			break
 		}
@@ -96,21 +156,27 @@ func indexLines(data string, progress *atomic.Int64, emit func([]*block)) {
 			// A small first batch gets the first screen up quickly.
 			if len(batch)*blockLines >= batchLines || (sent == 0 && len(batch) >= 4) {
 				sent++
-				progress.Store(int64(pos))
+				report(pos)
 				emit(batch)
 				batch = nil
 			}
 		}
 	}
-	// The sentinel puts the end of the last line at len(data).
-	if len(data)+1-cur.base > maxSpan && len(cur.idx) > 1 {
-		batch = append(batch, cur)
-		cur = newBlock(cur.base + int(cur.idx[len(cur.idx)-1]))
+	if last {
+		// The sentinel puts the end of the last line at len(data).
+		if len(data)+1-cur.base > maxSpan && len(cur.idx) > 1 {
+			batch = append(batch, cur)
+			cur = newBlock(cur.base + int(cur.idx[len(cur.idx)-1]))
+		}
+		cur.idx = append(cur.idx, uint32(len(data)+1-cur.base))
 	}
-	cur.idx = append(cur.idx, uint32(len(data)+1-cur.base))
-	batch = append(batch, cur)
-	progress.Store(int64(len(data)))
-	emit(batch)
+	if len(cur.idx) > 1 {
+		batch = append(batch, cur)
+	}
+	report(to)
+	if len(batch) > 0 {
+		emit(batch)
+	}
 }
 
 // poll takes in blocks indexed in the background. It reports whether

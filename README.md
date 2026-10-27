@@ -166,16 +166,20 @@ anywhere on it to jump there.
 
 - **Only what is on screen is drawn**, and it is drawn on the GPU.
 - **Big files are memory-mapped**, not copied. Lines are found in the
-  background, so the first screen appears right away.
+  background on all cores, so the first screen appears right away.
 - **Lines live in blocks of 1,024** that store 4-byte offsets into the file
   until edited. An edit touches one small block: ~30 µs even in a
   22-million-line file.
+- **Long lines stay fast.** nib remembers where every 4 KB of a long line
+  falls on screen, so working at the end of an 18 MB minified JSON line takes
+  0.04 ms a frame, the same as at its start.
 - **Find searches whole pieces of the file on all cores**, jumping between the
   query's rarest byte, or skipping ahead Horspool-style when every byte is
   common. Searching all of a 2 GB file takes 25–230 ms.
 - **Replacing all** finds the matching lines on all cores and changes only
   those lines.
-- **Searching the folder** reads files a megabyte at a time on all cores,
+- **Folders are listed on all cores**, many subfolders at once, and
+  **searching the folder** reads files a megabyte at a time on all cores
   while the folder is still being listed: 40,000 files (1.7 GB) in under a
   second once listed.
 - **Saving writes unedited parts straight from the original file**: 2 GB in 1.3 s.

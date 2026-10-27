@@ -254,7 +254,7 @@ func (e *Editor) wordRight(p Pos) Pos {
 // vertical moves the cursor by n lines, keeping the goal column.
 func (e *Editor) vertical(n int, extend bool) {
 	if e.goal < 0 {
-		e.goal = visCol(e.buf.Line(e.cursor.Line), e.cursor.Col)
+		e.goal = e.buf.VisCol(e.cursor.Line, e.cursor.Col)
 	}
 	goal := e.goal
 	l := e.cursor.Line + n
@@ -265,7 +265,7 @@ func (e *Editor) vertical(n int, extend bool) {
 	case l >= e.buf.LineCount():
 		p = e.buf.End()
 	default:
-		p = Pos{l, colAt(e.buf.Line(l), float32(goal))}
+		p = Pos{l, e.buf.ColAt(l, float32(goal))}
 	}
 	e.moveTo(p, extend)
 	e.goal = goal
@@ -589,7 +589,7 @@ func (e *Editor) submitPrompt() {
 		col := 0
 		if len(parts) == 2 {
 			c, _ := strconv.Atoi(parts[1])
-			col = colAt(e.buf.Line(e.buf.Clamp(Pos{l - 1, 0}).Line), float32(c-1))
+			col = e.buf.ColAt(e.buf.Clamp(Pos{l - 1, 0}).Line, float32(c-1))
 		}
 		e.moveTo(Pos{l - 1, col}, false)
 	case promptOpen:
@@ -860,7 +860,7 @@ func (e *Editor) posAt(pt f32.Point) Pos {
 	l := int(math.Floor((float64(pt.Y) + e.scrollY) / float64(e.lineH)))
 	l = max(0, min(l, e.buf.LineCount()-1))
 	x := (pt.X - float32(e.textX) + e.scrollX) / e.charW
-	return Pos{l, colAt(e.buf.Line(l), x)}
+	return Pos{l, e.buf.ColAt(l, x)}
 }
 
 // shiftKey opens the file finder when Shift is tapped twice in a row with
@@ -1078,7 +1078,7 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 		case e.buf.UseTabs:
 			e.insert("\t")
 		default:
-			v := visCol(e.buf.Line(a.Line), a.Col)
+			v := e.buf.VisCol(a.Line, a.Col)
 			e.insert(strings.Repeat(" ", tabWidth-v%tabWidth))
 		}
 	case key.NameEscape:
@@ -1334,7 +1334,7 @@ func (e *Editor) scrollIntoView() {
 		if cy+lh > e.scrollY+float64(e.viewH)-margin {
 			e.scrollY = cy + lh - float64(e.viewH) + margin
 		}
-		cx := float32(visCol(e.buf.Line(e.cursor.Line), e.cursor.Col)) * e.charW
+		cx := float32(e.buf.VisCol(e.cursor.Line, e.cursor.Col)) * e.charW
 		mx := e.charW * 8
 		if cx < e.scrollX+mx {
 			e.scrollX = cx - mx
@@ -1406,33 +1406,39 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 		line := e.buf.Line(i)
 
 		if q != "" {
-			for off := 0; ; {
-				j := index(line[off:])
+			// Only the visible part of a long line is searched.
+			lo, hi := 0, len(line)
+			if len(line) >= longLine {
+				lo = max(0, e.buf.ColAt(i, float32(v0))-len(q))
+				hi = min(len(line), e.buf.ColAt(i, float32(v1))+len(q))
+			}
+			for off := lo; ; {
+				j := index(line[off:hi])
 				if j < 0 {
 					break
 				}
 				off += j
-				x0, x1 := xOf(visCol(line, off)), xOf(visCol(line, off+len(q)))
+				x0, x1 := xOf(e.buf.VisCol(i, off)), xOf(e.buf.VisCol(i, off+len(q)))
 				fill(gtx, image.Rect(x0, y, x1, y+lh), colMatch)
 				off += len(q)
 			}
 		}
 
 		if hasSel && i >= selA.Line && i <= selB.Line {
-			c0, c1 := 0, visCol(line, len(line))+1
+			c0, c1 := 0, e.buf.VisCol(i, len(line))+1
 			if i == selA.Line {
-				c0 = visCol(line, selA.Col)
+				c0 = e.buf.VisCol(i, selA.Col)
 			}
 			if i == selB.Line {
-				c1 = visCol(line, selB.Col)
+				c1 = e.buf.VisCol(i, selB.Col)
 			}
 			fill(gtx, image.Rect(xOf(c0), y, xOf(c1), y+lh), colSel)
 		}
 
-		if lang != nil {
+		if lang != nil && len(line) <= maxHighlight {
 			e.hl.spans, st = lang.scan(line, st, e.hl.spans[:0])
 			e.drawSpans(gtx, xOf, y, line, v0, v1, e.hl.spans)
-		} else if s := displaySlice(line, v0, v1); s != "" {
+		} else if s := e.buf.Visible(i, v0, v1); s != "" {
 			e.label(gtx, xOf(v0), y, s, colText)
 		}
 	}
@@ -1445,7 +1451,7 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 			gtx.Execute(op.InvalidateCmd{At: e.blinkStart.Add((phase + 1) * blinkPeriod)})
 		}
 		if since >= 10*time.Second || (since/blinkPeriod)%2 == 0 {
-			x := xOf(visCol(e.buf.Line(e.cursor.Line), e.cursor.Col))
+			x := xOf(e.buf.VisCol(e.cursor.Line, e.cursor.Col))
 			y := e.cursor.Line*lh - sy
 			fill(gtx, image.Rect(x, y+gtx.Dp(2), x+gtx.Dp(2), y+lh-gtx.Dp(2)), colAccent)
 		}
@@ -1513,7 +1519,7 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 		eol = "CRLF"
 	}
 	right := fmt.Sprintf("%d:%d  %s  %s  %d lines", e.cursor.Line+1,
-		visCol(e.buf.Line(e.cursor.Line), e.cursor.Col)+1, ind, eol, e.buf.LineCount())
+		e.buf.VisCol(e.cursor.Line, e.cursor.Col)+1, ind, eol, e.buf.LineCount())
 	if e.dir != nil {
 		right = fmt.Sprintf("%d items", e.dir.count)
 	}

@@ -102,3 +102,57 @@ func TestIndexSpanLimit(t *testing.T) {
 		}
 	}
 }
+
+// TestIndexParallel checks that indexing in pieces on all cores finds the
+// same lines as splitting the text, whatever the text looks like at the
+// cuts.
+func TestIndexParallel(t *testing.T) {
+	r := rand.New(rand.NewPCG(3, 4))
+	random := func(n int, nl string) string {
+		var sb strings.Builder
+		for sb.Len() < n {
+			if r.IntN(40) == 0 {
+				sb.WriteString(nl)
+			} else {
+				sb.WriteByte('a' + byte(r.IntN(26)))
+			}
+		}
+		return sb.String()
+	}
+	texts := map[string]string{
+		"lines":           random(asyncMin+12345, "\n"),
+		"trailing":        random(asyncMin, "\n") + "\n",
+		"empty lines":     strings.Repeat("\n", asyncMin+7),
+		"one line":        strings.Repeat("x", asyncMin+1),
+		"few lines":       strings.Repeat("x", asyncMin) + "\n" + strings.Repeat("y", 100) + "\nz",
+		"crlf":            random(asyncMin+99, "\r\n"),
+		"long and spread": random(asyncMin, "\n") + strings.Repeat("q", asyncMin) + "\n",
+	}
+	for name, text := range texts {
+		for _, span := range []int{maxSpan, 1 << 16} {
+			func() {
+				defer func(old int) { maxSpan = old }(maxSpan)
+				maxSpan = span
+				var s lineStore
+				s.init(text)
+				for s.poll() {
+				}
+				want := strings.Split(text, "\n")
+				if s.crlf {
+					want = strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+				}
+				if s.count != len(want) {
+					t.Fatalf("%s, span %d: %d lines, want %d", name, span, s.count, len(want))
+				}
+				for i, w := range want {
+					if got := s.line(i); got != w {
+						t.Fatalf("%s, span %d: line %d = %.20q…, want %.20q…", name, span, i, got, w)
+					}
+				}
+				if p := s.progressPct(); p != 100 {
+					t.Errorf("%s: progress %d%%", name, p)
+				}
+			}()
+		}
+	}
+}

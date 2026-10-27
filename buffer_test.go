@@ -132,6 +132,14 @@ func TestIndexFold(t *testing.T) {
 	}
 }
 
+// BenchmarkIndexBig loads NIB_FILE and indexes all of its lines.
+func BenchmarkIndexBig(b *testing.B) {
+	for b.Loop() {
+		buf := loadAll(b)
+		b.ReportMetric(float64(buf.LineCount()), "lines")
+	}
+}
+
 // loadAll loads NIB_FILE and waits for indexing to finish.
 func loadAll(b *testing.B) *Buffer {
 	path := os.Getenv("NIB_FILE")

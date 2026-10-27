@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -170,4 +171,18 @@ func BenchmarkRank(b *testing.B) {
 			}
 		}
 	})
+}
+
+// BenchmarkWalk lists every file under NIB_ROOT (default: this folder).
+func BenchmarkWalk(b *testing.B) {
+	root := orDefault(os.Getenv("NIB_ROOT"), ".")
+	for b.Loop() {
+		ch := make(chan []string, 64)
+		go walk(root, ch, new(atomic.Bool))
+		n := 0
+		for batch := range ch {
+			n += len(batch)
+		}
+		b.ReportMetric(float64(n), "files")
+	}
 }

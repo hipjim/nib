@@ -47,6 +47,7 @@ type Buffer struct {
 	nextID  int
 	saved   int // state() at last load/save
 	edited  int // first line changed since the last TakeEdited
+	cols    colIndex
 	CRLF    bool
 	UseTabs bool
 }
@@ -137,6 +138,33 @@ func (b *Buffer) Dirty() bool       { return b.state() != b.saved }
 func (b *Buffer) LineCount() int    { return b.lines.count }
 func (b *Buffer) Line(i int) string { return b.lines.line(i) }
 
+// VisCol returns the visual column of byte col in line i.
+func (b *Buffer) VisCol(i, col int) int {
+	s := b.Line(i)
+	if len(s) < longLine {
+		return visCol(s, col)
+	}
+	return markAt(s, b.cols.near(i, s, col, 0), col).v
+}
+
+// ColAt returns the byte column in line i nearest to visual position x.
+func (b *Buffer) ColAt(i int, x float32) int {
+	s := b.Line(i)
+	if len(s) < longLine {
+		return colAt(s, x)
+	}
+	return colAtFrom(s, b.cols.near(i, s, -1, x), x)
+}
+
+// Visible returns line i between visual columns v0 and v1, tabs expanded.
+func (b *Buffer) Visible(i, v0, v1 int) string {
+	s := b.Line(i)
+	if len(s) < longLine {
+		return displaySlice(s, v0, v1)
+	}
+	return displayFrom(s, b.cols.near(i, s, -1, float32(v0)), v0, v1)
+}
+
 func (b *Buffer) End() Pos {
 	n := b.LineCount() - 1
 	return Pos{n, len(b.Line(n))}
@@ -193,6 +221,7 @@ func (b *Buffer) replace(start, end Pos, text string) Pos {
 	b.lines.replace(start.Line, end.Line, nl)
 	b.version++
 	b.edited = min(b.edited, start.Line)
+	b.cols.edited(start.Line, start.Col)
 	return endOf(start, text)
 }
 
@@ -315,6 +344,7 @@ func (b *Buffer) setLines(changes []lineEdit, redo bool) {
 			s = c.new
 		}
 		b.lines.replace(c.line, c.line, []string{s})
+		b.cols.edited(c.line, 0)
 	}
 	b.version++
 	b.edited = min(b.edited, changes[0].line)
