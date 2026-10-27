@@ -1,5 +1,6 @@
 #!/bin/sh
-# Compares nib and Zed on one file (macOS only).
+# Compares nib with Zed and Sublime Text on one file or folder (macOS only).
+# Editors missing from /Applications are skipped.
 # Usage: bench/run.sh <file> [runs] [timeout-seconds]
 set -e
 dir=$(cd "$(dirname "$0")" && pwd)
@@ -23,11 +24,20 @@ cat > "$work/zed/config/settings.json" <<'JSON'
 }
 JSON
 
-# Warm the file cache and both editors; the first launch is not counted.
+zed=/Applications/Zed.app/Contents/MacOS/zed
+# Sublime's safe mode uses a clean profile: no packages, no session.
+subl="/Applications/Sublime Text.app/Contents/MacOS/sublime_text"
+
+# One launch of each editor; prints a line prefixed with the editor's name.
+nib() { echo "nib      $("$work/bench" "$timeout" "$work/nib" "$1")"; }
+zed() { [ -x "$zed" ] && echo "zed      $("$work/bench" "$timeout" "$zed" --user-data-dir "$work/zed" "$1")"; }
+sublime() { [ -x "$subl" ] && echo "sublime  $("$work/bench" "$timeout" "$subl" --safe-mode "$1")"; }
+
+# Warm the file cache and the editors; the first launch is not counted.
 [ -f "$1" ] && cat "$1" > /dev/null
-"$work/bench" "$timeout" "$work/nib" "$1" > /dev/null
-"$work/bench" "$timeout" /Applications/Zed.app/Contents/MacOS/zed --user-data-dir "$work/zed" "$1" > /dev/null
+{ nib "$1"; zed "$1"; sublime "$1"; } > /dev/null || true
 for i in $(seq "$runs"); do
-  echo "nib  $("$work/bench" "$timeout" "$work/nib" "$1")"
-  echo "zed   $("$work/bench" "$timeout" /Applications/Zed.app/Contents/MacOS/zed --user-data-dir "$work/zed" "$1")"
+  nib "$1"
+  zed "$1" || true
+  sublime "$1" || true
 done

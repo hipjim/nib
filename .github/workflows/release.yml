@@ -99,7 +99,7 @@ jobs:
           cd dist
           sha256sum * > checksums.txt
           cat > notes.md <<'NOTES'
-          **macOS:** unzip `nib-*-macos-universal.zip` and move `nib.app` to Applications. It is not notarized yet, so the first time right-click it and choose **Open**, or run `xattr -d com.apple.quarantine /Applications/nib.app`. With Homebrew: `brew install hipjim/tap/nib`.
+          **macOS:** unzip `nib-*-macos-universal.zip` and move `nib.app` to Applications. It is not notarized yet, so the first time right-click it and choose **Open**, or run `xattr -d com.apple.quarantine /Applications/nib.app`.
 
           **Linux:** unpack the `.tar.gz` for your CPU and put `nib` on your `PATH`. It uses the system's Wayland or X11.
 
