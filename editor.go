@@ -118,6 +118,8 @@ type Editor struct {
 	clicks     int
 	shiftTap   time.Time // when Shift was last tapped alone; zero if not
 	shiftClean bool      // Shift is down and nothing else was pressed yet
+	typed      string    // typed in a folder listing to jump to an entry
+	typedAt    time.Time
 	blinkStart time.Time
 	focused    bool
 	started    bool
@@ -765,6 +767,9 @@ func (e *Editor) events(gtx layout.Context) {
 				if ev.Name != "Q" {
 					e.quitArmed = false
 				}
+				if ev.Name != key.NameDeleteBackward {
+					e.typed = ""
+				}
 				e.key(gtx, ev, discard)
 			}
 		case key.EditEvent:
@@ -772,6 +777,8 @@ func (e *Editor) events(gtx layout.Context) {
 			e.msg = ""
 			if e.prompt != promptNone {
 				e.setInput(e.input + ev.Text)
+			} else if e.dir != nil {
+				e.typeTo(gtx.Now, ev.Text)
 			} else {
 				e.insert(ev.Text)
 			}
@@ -988,7 +995,12 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 		case key.NameReturn, key.NameEnter, key.NameRightArrow:
 			e.activate(e.cursor.Line)
 			return
-		case key.NameLeftArrow, key.NameDeleteBackward:
+		case key.NameDeleteBackward:
+			if !e.untype(gtx.Now) {
+				e.up()
+			}
+			return
+		case key.NameLeftArrow:
 			e.up()
 			return
 		}

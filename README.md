@@ -104,8 +104,9 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
   <img src="docs/finder.png" width="400" alt="the fuzzy file finder">
 </p>
 
-- **Folders** open as a listing with size, modified and created dates. `Enter`
-  opens, `←` or `Backspace` goes up, and `⌘E` jumps from a file to its folder.
+- **Folders** open as a listing with size, modified and created dates. Type a
+  few letters of a name to jump to it, as in Finder. `Enter` opens, `←` or
+  `Backspace` goes up, and `⌘E` jumps from a file to its folder.
 - **`⌘P`**, or tapping Shift twice, finds any file under the folder from a
   few letters of its path, like fzf. It walks the folder in the background, skips `.git`,
   `node_modules` and `.gitignore` matches, and ranks 67,000 paths in under 8 ms.

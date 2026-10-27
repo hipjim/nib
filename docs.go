@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
+	"time"
+	"unicode/utf8"
 )
 
 // A doc is an open file or folder listing with its own cursor, scroll
@@ -135,6 +138,66 @@ func (e *Editor) activate(line int) {
 	default:
 		e.open(en.path)
 	}
+}
+
+// typePause is how long typing in a listing may pause before it starts
+// over, as in Finder.
+const typePause = time.Second
+
+// typeTo adds s to what was typed in the listing and jumps to the entry
+// it names.
+func (e *Editor) typeTo(now time.Time, s string) {
+	if now.Sub(e.typedAt) > typePause {
+		e.typed = ""
+	}
+	e.typed += s
+	e.typedAt = now
+	e.jumpTyped()
+}
+
+// untype takes back the last letter typed in the listing. It reports false
+// if nothing was being typed.
+func (e *Editor) untype(now time.Time) bool {
+	if e.typed == "" || now.Sub(e.typedAt) > typePause {
+		e.typed = ""
+		return false
+	}
+	_, n := utf8.DecodeLastRuneInString(e.typed)
+	e.typed = e.typed[:len(e.typed)-n]
+	e.typedAt = now
+	if e.typed != "" {
+		e.jumpTyped()
+	}
+	return true
+}
+
+func (e *Editor) jumpTyped() {
+	if i := matchEntry(e.dir.entries, e.typed); i >= 0 {
+		e.moveTo(Pos{dirHeader + i, 0}, false)
+		e.flash("→ "+e.typed, false)
+	} else {
+		e.flash(e.typed+" · no match", true)
+	}
+}
+
+// matchEntry is the first entry whose name starts with q, ignoring case,
+// or else the first that contains it; -1 if none does.
+func matchEntry(ents []dirEntry, q string) int {
+	q = strings.ToLower(q)
+	found := -1
+	for i, en := range ents {
+		if en.name == ".." {
+			continue
+		}
+		name := strings.ToLower(en.name)
+		if strings.HasPrefix(name, q) {
+			return i
+		}
+		if found < 0 && strings.Contains(name, q) {
+			found = i
+		}
+	}
+	return found
 }
 
 // up shows the parent folder of the listing, or the folder of the file.

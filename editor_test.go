@@ -248,3 +248,45 @@ func TestReplacePrompt(t *testing.T) {
 		t.Fatalf("undo gave %q", got)
 	}
 }
+
+func TestTypeToJump(t *testing.T) {
+	root := t.TempDir()
+	for _, n := range []string{"alpha", "beta.go", "Bravo", "notes"} {
+		os.WriteFile(root+"/"+n, nil, 0o644)
+	}
+	os.Mkdir(root+"/src", 0o755)
+	e := newTestEditor("", Pos{})
+	e.docs = []*doc{e.doc}
+	e.openDir(root, "")
+	name := func() string { en, _ := e.entry(e.cursor.Line); return en.name }
+	now := time.Now()
+	at := func(ms int) time.Time { return now.Add(time.Duration(ms) * time.Millisecond) }
+
+	e.typeTo(at(0), "b")
+	if name() != "beta.go" {
+		t.Fatalf("b: at %q", name())
+	}
+	e.typeTo(at(100), "r")
+	if name() != "Bravo" {
+		t.Fatalf("br: at %q", name())
+	}
+	if !e.untype(at(200)) || name() != "beta.go" {
+		t.Fatalf("backspace: at %q", name())
+	}
+	e.typeTo(at(1500), "s") // after a pause it starts over
+	if name() != "src" {
+		t.Fatalf("s: at %q", name())
+	}
+	e.typeTo(at(1600), "rc")
+	e.typeTo(at(3000), "ote") // no name starts with it, one contains it
+	if name() != "notes" {
+		t.Fatalf("ote: at %q", name())
+	}
+	e.typeTo(at(3100), "zz")
+	if name() != "notes" || !e.msgWarn {
+		t.Fatalf("no match moved to %q", name())
+	}
+	if e.untype(at(5000)) {
+		t.Fatal("backspace after a pause should go up, not edit the old typing")
+	}
+}
