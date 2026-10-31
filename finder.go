@@ -34,6 +34,7 @@ const (
 type finder struct {
 	root    string
 	paths   []string // slash-separated, relative to root
+	masks   []uint64 // charMask of each path, extended as rank needs them
 	walking chan []string
 	stop    *atomic.Bool
 	started time.Time
@@ -148,6 +149,7 @@ func (f *finder) poll() (changed, walking bool) {
 			if !ok {
 				f.walking = nil
 				slices.Sort(f.paths) // folders are listed in parallel, in no order
+				f.masks = f.masks[:0]
 				return true, false
 			}
 			f.paths = append(f.paths, b...)
@@ -191,62 +193,143 @@ func (f *finder) rank() {
 			q[i] = unicode.ToLower(r)
 		}
 	}
-	pos := make([]int, len(q))
-	try := func(p string, bonus int) {
-		s, ok := fuzzyScore(p, q, fold, pos)
-		if !ok {
-			return
-		}
-		f.matches++
-		r := result{p, s + bonus}
-		if len(f.results) == maxResults && !better(r, f.results[maxResults-1]) {
-			return
-		}
-		i, _ := slices.BinarySearchFunc(f.results, r, func(a, b result) int {
-			if better(a, b) {
-				return -1
-			}
-			return 1
-		})
-		f.results = slices.Insert(f.results, i, r)
-		f.results = f.results[:min(len(f.results), maxResults)]
+	for i := len(f.masks); i < len(f.paths); i++ {
+		f.masks = append(f.masks, charMask(f.paths[i]))
 	}
+	qm := charMask(f.query)
 	// A longer query only matches paths the shorter one matched.
-	walked := map[string]bool{}
-	var cand []int32
-	visit := func(i int32) {
-		before := f.matches
-		p := f.paths[i]
-		if b := isRecent[p]; b > 0 {
-			walked[p] = true
-			try(p, 20*b)
-		} else {
-			try(p, 0)
-		}
-		if f.matches > before {
-			cand = append(cand, i)
-		}
-	}
+	var src []int32 // the paths to rank; nil means all of them
 	if f.last != "" && strings.HasPrefix(f.query, f.last) {
-		for _, i := range f.cand {
-			visit(i)
+		src = f.cand
+	}
+	n := len(f.paths)
+	if src != nil {
+		n = len(src)
+	}
+	// Rank on all cores, each keeping its own best few, then merge.
+	parts := make([]ranking, runtime.NumCPU())
+	parallelFor(n, 4096, func(lo, hi, w int) {
+		rk := &parts[w]
+		rk.pos = make([]int, len(q))
+		for x := lo; x < hi; x++ {
+			i := int32(x)
+			if src != nil {
+				i = src[x]
+			}
+			if f.masks[i]&qm != qm {
+				continue // lacks a character of the query
+			}
+			p := f.paths[i]
+			bonus := 0
+			if b := isRecent[p]; b > 0 {
+				rk.seen = append(rk.seen, p)
+				bonus = 20 * b
+			}
+			if rk.try(p, q, fold, bonus) {
+				rk.cand = append(rk.cand, i)
+			}
 		}
-	} else {
-		for i := range f.paths {
-			visit(int32(i))
+	})
+	// Open files that are not under root, or not walked yet, go in too.
+	seen := map[string]bool{}
+	for _, rk := range parts {
+		for _, p := range rk.seen {
+			seen[p] = true
 		}
 	}
+	extra := ranking{pos: make([]int, len(q))}
+	for _, p := range f.recent {
+		if !seen[p] {
+			extra.try(p, q, fold, 20*isRecent[p])
+		}
+	}
+	var all []result
+	var cand []int32
+	for _, rk := range append(parts, extra) {
+		f.matches += rk.matches
+		all = append(all, rk.results...)
+		cand = append(cand, rk.cand...)
+	}
+	slices.SortStableFunc(all, func(a, b result) int {
+		if better(a, b) {
+			return -1
+		}
+		if better(b, a) {
+			return 1
+		}
+		return 0
+	})
+	f.results = all[:min(len(all), maxResults)]
 	f.last, f.cand = f.query, cand
 	if f.walking != nil {
 		f.last = "" // more paths are coming; rank them all next time
 	}
-	for _, p := range f.recent {
-		if !walked[p] {
-			try(p, 20*isRecent[p])
-		}
-	}
 	f.sel = min(f.sel, max(0, len(f.results)-1))
 }
+
+// A ranking is the best few matches found by one core.
+type ranking struct {
+	results []result // the best maxResults so far, best first
+	matches int
+	cand    []int32  // the paths that matched
+	seen    []string // open files among them
+	pos     []int    // scratch for fuzzyScore
+}
+
+// try scores p and keeps it if it is among the best; it reports whether p
+// matched at all.
+func (rk *ranking) try(p string, q []rune, fold bool, bonus int) bool {
+	s, ok := fuzzyScore(p, q, fold, rk.pos)
+	if !ok {
+		return false
+	}
+	rk.matches++
+	r := result{p, s + bonus}
+	if len(rk.results) == maxResults && !better(r, rk.results[maxResults-1]) {
+		return true
+	}
+	i, _ := slices.BinarySearchFunc(rk.results, r, func(a, b result) int {
+		if better(a, b) {
+			return -1
+		}
+		return 1
+	})
+	rk.results = slices.Insert(rk.results, i, r)
+	rk.results = rk.results[:min(len(rk.results), maxResults)]
+	return true
+}
+
+// charMask summarizes which characters s has in 64 bits: one per letter in
+// either case, one per digit, one per common punctuation mark and one for
+// everything else. A path can only match a query whose mask is a subset
+// of its own, so one AND rejects most paths before any matching.
+func charMask(s string) uint64 {
+	var m uint64
+	for i := 0; i < len(s); i++ {
+		m |= 1 << maskBit[s[i]]
+	}
+	return m
+}
+
+var maskBit = func() (t [256]uint8) {
+	const punct = "/._- ()[]{}@+~,:;=!#&'$%"
+	for c := range 256 {
+		switch {
+		case 'a' <= c && c <= 'z':
+			t[c] = uint8(c - 'a')
+		case 'A' <= c && c <= 'Z':
+			t[c] = uint8(c - 'A')
+		case '0' <= c && c <= '9':
+			t[c] = uint8(26 + c - '0')
+		default:
+			t[c] = 63
+			if k := strings.IndexByte(punct, byte(c)); k >= 0 {
+				t[c] = uint8(36 + k)
+			}
+		}
+	}
+	return
+}()
 
 func better(a, b result) bool {
 	if a.score != b.score {

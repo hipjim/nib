@@ -160,21 +160,81 @@ func rarest(q string, fold bool) int {
 // text, so scanning for it stops too often.
 const commonRank = 232
 
-// indexRare finds q in s. It scans for q's rarest byte with IndexByte and
-// checks around each hit; if even that byte is common, it uses Horspool's
-// skip search instead. With fold, q is lower-case ASCII and matches either
-// case.
-func indexRare(s, q string, fold bool) int {
+// A searcher finds one query in strings. It scans for the query's rarest
+// byte with IndexByte and checks around each hit. If even that byte is
+// common, it skips through the text by the last two bytes of each window
+// (Horspool with 2-grams), which skips nearly the query's length at a time
+// where single bytes would stop every few bytes. Its tables are built once,
+// so a search over millions of short lines starts each one right away.
+type searcher struct {
+	q      string
+	fold   bool // q is lower-case ASCII and matches either case
+	k      int  // index of the rarest byte of q
+	lo, up byte // that byte in both cases
+	// With a skip table, d[pair] is m-1 minus the shift for a window
+	// ending in pair, so a zeroed table shifts by m-1; m-1 itself marks the
+	// query's own last pair, and last is the shift after checking it.
+	d    *[65536]uint8
+	last int
+}
+
+// horspoolMax is the longest query the skip table holds.
+const horspoolMax = 256
+
+func newSearcher(q string, fold bool) *searcher {
 	k := rarest(q, fold)
-	if len(q) >= 4 && byteRank[q[k]] >= commonRank {
-		return horspool(s, q, fold)
+	sr := &searcher{q: q, fold: fold, k: k, lo: q[k], up: q[k]}
+	if fold && 'a' <= sr.lo && sr.lo <= 'z' {
+		sr.up = sr.lo - 'a' + 'A'
 	}
-	lo, up := q[k], q[k]
-	if fold && 'a' <= lo && lo <= 'z' {
-		up = lo - 'a' + 'A'
+	m := len(q)
+	if m < 4 || m > horspoolMax || byteRank[q[k]] < commonRank {
+		return sr
 	}
+	sr.d = new([65536]uint8)
+	sr.last = m - 1
+	cases := func(c byte) []byte {
+		if fold && 'a' <= c && c <= 'z' {
+			return []byte{c, c - 'a' + 'A'}
+		}
+		return []byte{c}
+	}
+	for j := 0; j+1 < m; j++ {
+		if j+1 == m-1 {
+			// The shift after a window that ends like the query: to its
+			// previous occurrence of that pair, if any.
+			sr.last = m - 1 - int(sr.d[pairAt(q, j)])
+		}
+		for _, a := range cases(q[j]) {
+			for _, b := range cases(q[j+1]) {
+				sr.d[uint16(a)|uint16(b)<<8] = uint8(j + 1)
+			}
+		}
+	}
+	return sr
+}
+
+func (sr *searcher) equal(cand string) bool {
+	if sr.fold {
+		return equalFoldASCII(cand, sr.q)
+	}
+	return cand == sr.q
+}
+
+func (sr *searcher) index(s string) int {
+	q, m := sr.q, len(sr.q)
+	if len(s) < m {
+		return -1
+	}
+	if sr.d != nil {
+		return sr.horspool2(s)
+	}
+	if m > horspoolMax && byteRank[q[sr.k]] >= commonRank {
+		return horspool(s, q, sr.fold)
+	}
+	k, lo, up := sr.k, sr.lo, sr.up
 	nextLo, nextUp := -1, -1 // positions of the rare byte's two cases
-	for i := k; i+len(q)-k <= len(s); {
+	for i := k; i+m-k <= len(s); {
 		if nextLo < i {
 			if nextLo = strings.IndexByte(s[i:], lo); nextLo < 0 {
 				nextLo = len(s)
@@ -193,11 +253,10 @@ func indexRare(s, q string, fold bool) int {
 		}
 		i = min(nextLo, nextUp)
 		start := i - k
-		if start+len(q) > len(s) {
+		if start+m > len(s) {
 			return -1
 		}
-		cand := s[start : start+len(q)]
-		if fold && equalFoldASCII(cand, q) || !fold && cand == q {
+		if sr.equal(s[start : start+m]) {
 			return start
 		}
 		i++
@@ -205,8 +264,91 @@ func indexRare(s, q string, fold bool) int {
 	return -1
 }
 
+// pairAt returns the bytes s[i] and s[i+1] as one word, which is how the
+// skip table is indexed. The compiler makes it a single load.
+func pairAt(s string, i int) uint16 {
+	return uint16(s[i]) | uint16(s[i+1])<<8
+}
+
+// streams is how many parts of the text horspool2 scans at once.
+const streams = 4
+
+// horspool2 finds the query by looking at the last two bytes of each
+// window of the text and skipping ahead by up to len(q)-1. Each step
+// waits for the previous one's loads, so a long text is cut into streams
+// parts scanned in the same loop, which the processor overlaps.
+func (sr *searcher) horspool2(s string) int {
+	m := len(sr.q)
+	if len(s) < streams*4096 {
+		return sr.scan(s, 0, len(s))
+	}
+	var from, to [streams]int // the windows of part k start in [from, to-m]
+	part := len(s) / streams
+	for k := range streams {
+		from[k], to[k] = k*part, min(len(s), (k+1)*part+m-1)
+	}
+	d := sr.d
+	i := from
+	for i[0]+m <= to[0] && i[1]+m <= to[1] && i[2]+m <= to[2] && i[3]+m <= to[3] {
+		var x [streams]int
+		x[0] = int(d[pairAt(s, i[0]+m-2)])
+		x[1] = int(d[pairAt(s, i[1]+m-2)])
+		x[2] = int(d[pairAt(s, i[2]+m-2)])
+		x[3] = int(d[pairAt(s, i[3]+m-2)])
+		if x[0] == m-1 || x[1] == m-1 || x[2] == m-1 || x[3] == m-1 {
+			for k := range streams {
+				if x[k] != m-1 {
+					i[k] += m - 1 - x[k]
+					continue
+				}
+				if sr.equal(s[i[k] : i[k]+m]) {
+					// An earlier part may still hold an earlier match.
+					for j := range k {
+						if r := sr.scan(s, i[j], to[j]); r >= 0 {
+							return r
+						}
+					}
+					return i[k]
+				}
+				i[k] += sr.last
+			}
+			continue
+		}
+		i[0] += m - 1 - x[0]
+		i[1] += m - 1 - x[1]
+		i[2] += m - 1 - x[2]
+		i[3] += m - 1 - x[3]
+	}
+	// One part ran out; finish the rest in order.
+	for k := range streams {
+		if j := sr.scan(s, i[k], to[k]); j >= 0 {
+			return j
+		}
+	}
+	return -1
+}
+
+// scan finds the query in the windows of s that start at or after i and
+// end at or before to.
+func (sr *searcher) scan(s string, i, to int) int {
+	m, d := len(sr.q), sr.d
+	for i+m <= to {
+		x := int(d[pairAt(s, i+m-2)])
+		if x == m-1 {
+			if sr.equal(s[i : i+m]) {
+				return i
+			}
+			i += sr.last
+			continue
+		}
+		i += m - 1 - x
+	}
+	return -1
+}
+
 // horspool finds q in s by checking the last byte of each window and
-// skipping ahead by up to len(q) when it cannot end a match.
+// skipping ahead by up to len(q) when it cannot end a match. It serves
+// queries too long for a searcher's table.
 func horspool(s, q string, fold bool) int {
 	m := len(q)
 	var skip [256]int

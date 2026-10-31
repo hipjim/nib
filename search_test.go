@@ -80,7 +80,7 @@ func TestFindMatchesNaive(t *testing.T) {
 	}
 }
 
-func TestIndexRare(t *testing.T) {
+func TestSearcherIndex(t *testing.T) {
 	for _, c := range []struct {
 		s, q string
 		fold bool
@@ -97,8 +97,8 @@ func TestIndexRare(t *testing.T) {
 		{"tenet tenets", "tenets", false, 6},
 		{"aaaa", "aaaaa", false, -1},
 	} {
-		if got := indexRare(c.s, c.q, c.fold); got != c.want {
-			t.Errorf("indexRare(%q, %q, %v) = %d, want %d", c.s, c.q, c.fold, got, c.want)
+		if got := newSearcher(c.q, c.fold).index(c.s); got != c.want {
+			t.Errorf("index(%q, %q, %v) = %d, want %d", c.s, c.q, c.fold, got, c.want)
 		}
 	}
 }
@@ -231,5 +231,79 @@ func TestReplaceAllUndo(t *testing.T) {
 	b.Redo()
 	if got := b.Text(Pos{}, b.End()); got != "a pin\nnone\npin pin" {
 		t.Fatalf("redo gave %q", got)
+	}
+}
+
+// TestSearcherMatchesNaive checks the searcher, with and without a skip
+// table, against a plain scan over text with few distinct bytes, so pairs
+// repeat and both cases show up.
+func TestSearcherMatchesNaive(t *testing.T) {
+	rng := rand.New(rand.NewPCG(9, 10))
+	const alphabet = "etaETA ;"
+	random := func(n int) string {
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = alphabet[rng.IntN(len(alphabet))]
+		}
+		return string(b)
+	}
+	naive := func(s, q string, fold bool) int {
+		for i := 0; i+len(q) <= len(s); i++ {
+			if c := s[i : i+len(q)]; fold && equalFoldASCII(c, q) || !fold && c == q {
+				return i
+			}
+		}
+		return -1
+	}
+	for i := range 300_000 {
+		n := 1 + rng.IntN(12)
+		if i%1000 == 0 {
+			n = horspoolMax + 1 + rng.IntN(20) // too long for the table
+		}
+		q, fold := random(n), rng.IntN(2) == 0
+		if fold {
+			q = strings.ToLower(q)
+		}
+		sr := newSearcher(q, fold)
+		for range 3 {
+			s := random(rng.IntN(2 * max(n, 40)))
+			if rng.IntN(2) == 0 { // plant a match
+				at := rng.IntN(len(s) + 1)
+				planted := q
+				if fold && rng.IntN(2) == 0 {
+					planted = strings.ToUpper(q)
+				}
+				s = s[:at] + planted + s[at:]
+			}
+			if got, want := sr.index(s), naive(s, q, fold); got != want {
+				t.Fatalf("index(%q, %q, fold %v) = %d, want %d", s, q, fold, got, want)
+			}
+		}
+	}
+	// Long texts are scanned in parts at once; the earliest match must win
+	// wherever it is, including across the part boundaries.
+	for range 2000 {
+		q := strings.ReplaceAll(strings.ToLower(random(4+rng.IntN(8))), ";", "e")
+		sr := newSearcher(q, true)
+		n := streams*4096 + rng.IntN(8192)
+		b := []byte(strings.Repeat(";", n)) // ';' is not in q, so only planted text matches
+		for k := range 1 + rng.IntN(3) {
+			at := rng.IntN(n - len(q))
+			if k == 0 && rng.IntN(2) == 0 {
+				at = (1+rng.IntN(streams-1))*(n/streams) - rng.IntN(len(q)) // across a boundary
+			}
+			planted := q
+			if rng.IntN(2) == 0 {
+				planted = strings.ToUpper(q)
+			}
+			copy(b[at:], planted) // plants may overlap; naive decides
+		}
+		s := string(b)
+		if got, want := sr.index(s), naive(s, q, true); got != want || want < 0 {
+			t.Fatalf("long index(%q) = %d, want %d", q, got, want)
+		}
+		if got := sr.index(strings.Repeat(";", n)); got != -1 {
+			t.Fatalf("long index(%q) in no match = %d", q, got)
+		}
 	}
 }

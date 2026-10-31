@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -299,7 +300,8 @@ func (b *Buffer) Redo() (Pos, bool) {
 
 // ReplaceAll replaces every match of q with r as one undo step and returns
 // how many it replaced. Neither may contain a newline, so line numbers stay
-// the same and only the lines with a match are touched.
+// the same and only the lines with a match are touched. The matching lines
+// are found and rewritten on all cores.
 func (b *Buffer) ReplaceAll(q, r string, cursor Pos) int {
 	if q == "" || strings.Contains(q, "\n") || strings.Contains(r, "\n") {
 		return 0
@@ -310,23 +312,13 @@ func (b *Buffer) ReplaceAll(q, r string, cursor Pos) int {
 		return 0
 	}
 	changes := make([]lineEdit, len(lines))
+	counts := make([]int, runtime.NumCPU())
+	if !b.lines.rewrite(lines, changes, counts, index, q, r) {
+		return 0 // the file vanished under us; the next draw reports it
+	}
 	n := 0
-	var sb strings.Builder
-	for i, l := range lines {
-		old := b.Line(l)
-		sb.Reset()
-		for s := old; ; {
-			j := index(s)
-			if j < 0 {
-				sb.WriteString(s)
-				break
-			}
-			sb.WriteString(s[:j])
-			sb.WriteString(r)
-			s = s[j+len(q):]
-			n++
-		}
-		changes[i] = lineEdit{l, old, sb.String()}
+	for _, c := range counts {
+		n += c
 	}
 	b.setLines(changes, true)
 	b.redo = b.redo[:0]
@@ -344,8 +336,8 @@ func (b *Buffer) setLines(changes []lineEdit, redo bool) {
 			s = c.new
 		}
 		b.lines.replace(c.line, c.line, []string{s})
-		b.cols.edited(c.line, 0)
 	}
+	b.cols.edited(changes[0].line, 0) // and so every line after it
 	b.version++
 	b.edited = min(b.edited, changes[0].line)
 }
@@ -385,9 +377,8 @@ func (b *Buffer) Find(q string, from Pos, backward bool) (Pos, bool) {
 // matcher returns a function that finds q in a line. A lower-case query
 // matches case-insensitively without allocating for ASCII queries.
 func matcher(q string) func(string) int {
-	exact := func(s string) int { return indexRare(s, q, false) }
 	if strings.ToLower(q) != q || strings.ToUpper(q) == q {
-		return exact // has upper case, or nothing to fold
+		return newSearcher(q, false).index // has upper case, or nothing to fold
 	}
 	for i := 0; i < len(q); i++ {
 		if q[i] >= 0x80 {
@@ -400,7 +391,7 @@ func matcher(q string) func(string) int {
 			}
 		}
 	}
-	return func(s string) int { return indexRare(s, q, true) }
+	return newSearcher(q, true).index
 }
 
 func equalFoldASCII(s, lower string) bool {

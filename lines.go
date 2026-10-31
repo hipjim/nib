@@ -282,6 +282,68 @@ func (s *lineStore) replace(first, last int, repl []string) {
 	s.hint = bi
 }
 
+// rewrite fills changes with the given lines, in order, and the text of each
+// with every match of q replaced by r; counts[w] gets the matches found by
+// worker w. The lines are rewritten on all cores, and each core cuts its new
+// lines out of one byte slice, so a million lines cost a handful of
+// allocations instead of a million. It only reads the store. It reports
+// false, with changes unusable, if the mapped file faulted.
+func (s *lineStore) rewrite(lines []int, changes []lineEdit, counts []int, index func(string) int, q, r string) bool {
+	return parallelFor(len(lines), 4096, func(lo, hi, w int) {
+		lines, changes := lines[lo:hi], changes[lo:hi]
+		size := 0
+		bi := 0
+		for i, l := range lines {
+			if l < s.first[bi] || l >= s.first[bi]+s.blocks[bi].n() {
+				bi = sort.Search(len(s.blocks), func(x int) bool { return s.first[x] > l }) - 1
+			}
+			old := s.lineIn(bi, l-s.first[bi])
+			changes[i] = lineEdit{line: l, old: old}
+			size += len(old)
+		}
+		if len(r) > len(q) {
+			size += size / 8 // room for some growth before the slice doubles
+		}
+		buf := make([]byte, 0, size)
+		ends := make([]int, len(lines))
+		n := 0
+		for i, c := range changes {
+			for rest := c.old; ; {
+				j := index(rest)
+				if j < 0 {
+					buf = append(buf, rest...)
+					break
+				}
+				buf = append(buf, rest[:j]...)
+				buf = append(buf, r...)
+				rest = rest[j+len(q):]
+				n++
+			}
+			ends[i] = len(buf)
+		}
+		if cap(buf)-len(buf) > len(buf)/8 {
+			buf = append(make([]byte, 0, len(buf)), buf...) // the lines keep buf alive; keep it tight
+		}
+		// buf is never written again, so the lines can share it.
+		all := unsafe.String(unsafe.SliceData(buf), len(buf))
+		start := 0
+		for i := range changes {
+			changes[i].new = all[start:ends[i]]
+			start = ends[i]
+		}
+		counts[w] = n
+	})
+}
+
+// lineIn returns line j of block bi. Unlike line, it does not touch the
+// lookup hint, so several goroutines may call it at once.
+func (s *lineStore) lineIn(bi, j int) string {
+	if k := s.blocks[bi]; k.idx != nil {
+		return s.raw(k, j)
+	}
+	return s.blocks[bi].lines[j]
+}
+
 // readFile returns the contents of path, memory-mapping large files.
 func readFile(path string) (string, error) {
 	f, err := os.Open(path)
@@ -298,12 +360,31 @@ func readFile(path string) (string, error) {
 			return data, nil
 		}
 	}
-	data, err := io.ReadAll(f)
+	data, err := readAll(f, int(fi.Size()))
 	if err != nil || len(data) == 0 {
 		return "", err
 	}
 	// data is never written again, so share it instead of copying it.
 	return unsafe.String(&data[0], len(data)), nil
+}
+
+// readAll reads f, which is about size bytes long, into one allocation
+// instead of growing a buffer by doubling as io.ReadAll does.
+func readAll(f *os.File, size int) ([]byte, error) {
+	data := make([]byte, 0, size+1) // room for the read that returns EOF
+	for {
+		if len(data) == cap(data) {
+			data = append(data, 0)[:len(data)] // the file grew; let append pick the size
+		}
+		n, err := f.Read(data[len(data):cap(data)])
+		data = data[:len(data)+n]
+		if err == io.EOF {
+			return data, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 }
 
 // writeTo writes the document with sep between lines. Unedited runs of

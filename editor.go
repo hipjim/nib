@@ -1252,7 +1252,7 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	defer func() {
 		// A memory-mapped file that is truncated on disk faults on access.
 		if r := recover(); r != nil {
-			if err, ok := r.(error); !ok || !strings.Contains(err.Error(), "fault") {
+			if !isFault(r) {
 				panic(r)
 			}
 			e.buf = NewBuffer("")

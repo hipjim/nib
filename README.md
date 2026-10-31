@@ -78,8 +78,8 @@ spaces and LF or CRLF line endings are detected and kept.
 - **`⌘F`** finds as you type, from the cursor; `Enter` goes to the next match.
 - **`⌘R`** replaces: type what to find, `Enter`, then the replacement. `Enter`
   replaces the selected match and moves on, `↓` skips it, and `⌘Enter`
-  replaces every match in the file as one undo step (a million matches in a
-  100 MB file take a quarter of a second).
+  replaces every match in the file as one undo step (5 million matches in a
+  500 MB file take 0.16 s).
 - **`⌘⇧F`** searches every file under the folder as you type and lists each
   matching line. `Enter` opens the file with the match selected, and `F3`
   goes on to the next one in that file. Binary files, `.git`, `node_modules`
@@ -99,7 +99,7 @@ A lower-case query ignores case; one with a capital letter matches exactly.
   `Backspace` goes up, and `⌘E` jumps from a file to its folder.
 - **`⌘P`**, or tapping Shift twice, finds any file under the folder from a few
   letters of its path, like fzf. It skips `.git`, `node_modules` and
-  `.gitignore` matches, and ranks 67,000 paths in under 8 ms. Files you have
+  `.gitignore` matches, and ranks 40,000 paths in a millisecond. Files you have
   open are listed first; they stay open in the background with their cursor,
   undo history and unsaved edits.
 - **`⌘I`** shows a file's properties: size, lines, created, modified and
@@ -171,8 +171,11 @@ anywhere on it to jump there.
   falls on screen, so working at the end of an 18 MB minified JSON line takes
   0.04 ms a frame, the same as at its start.
 - **Find searches the file on all cores**, jumping between the query's rarest
-  byte, or skipping ahead Horspool-style when every byte is common. Searching
-  all of a 2 GB file takes 25–230 ms.
+  byte, or, when every byte is common, skipping ahead Horspool-style on pairs
+  of bytes with four parts of the text in flight at once. A 500 MB file is
+  searched in 5–20 ms.
+- **Replace-all rewrites the matched lines on all cores**, each core cutting
+  its new lines from one buffer: 5 million matches in 500 MB in 0.16 s.
 - **Searching the folder** lists it on all cores and reads files a megabyte at
   a time while the listing is still going: 40,000 files (1.7 GB) in under a
   second once listed.
