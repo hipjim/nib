@@ -34,7 +34,7 @@ func (e *Editor) drawFinder(gtx layout.Context, width, bottom int) {
 		if f.walking != nil {
 			msg = "scanning…"
 		}
-		e.label(gtx, pad, bottom-lh-gtx.Dp(4), msg, tokColors[tokComment])
+		e.label(gtx, pad, bottom-lh-gtx.Dp(4), msg, colInfo)
 		return
 	}
 	q := []rune(f.query)
@@ -44,6 +44,7 @@ func (e *Editor) drawFinder(gtx layout.Context, width, bottom int) {
 			q[i] = unicode.ToLower(r)
 		}
 	}
+	open := e.openPaths()
 	for i, r := range f.results[:rows] {
 		y := bottom - (i+1)*lh - gtx.Dp(4)
 		if i == f.sel {
@@ -57,10 +58,119 @@ func (e *Editor) drawFinder(gtx layout.Context, width, bottom int) {
 			case slices.Contains(pos, b):
 				return colAccent
 			case b < base:
-				return tokColors[tokComment]
+				return colInfo
 			}
 			return colText
 		})
+		// A dot after files that are open; brighter when unsaved.
+		if dirty, ok := open[r.path]; ok {
+			c := colInfo
+			if dirty {
+				c = colAccent
+			}
+			e.label(gtx, pad+int(float32(utf8.RuneCountInString(r.path)+1)*e.charW), y, "●", c)
+		}
+	}
+}
+
+// openPaths maps each open file, relative to the finder's root, to whether
+// it has unsaved changes.
+func (e *Editor) openPaths() map[string]bool {
+	m := map[string]bool{}
+	for _, d := range e.docs {
+		if d.dir != nil || d.path == "" {
+			continue
+		}
+		if rel, err := filepath.Rel(e.finder.root, d.path); err == nil {
+			m[filepath.ToSlash(rel)] = d.buf.Dirty()
+		}
+	}
+	return m
+}
+
+// drawHint shows the main keys in an empty scratch buffer, under line 1.
+func (e *Editor) drawHint(gtx layout.Context, xOf func(int) int, sy int) {
+	hints := [][2]string{
+		{shortcutName + "O", "open a file or folder"},
+		{shortcutName + "P", "find a file in the folder"},
+		{shortcutName + shiftName + "F", "search the folder"},
+		{shortcutName + "/", "all the keys"},
+	}
+	w := 0
+	for _, h := range hints {
+		w = max(w, utf8.RuneCountInString(h[0]))
+	}
+	for i, h := range hints {
+		y := (i+2)*e.lineH - sy
+		e.label(gtx, xOf(0), y, h[0], colInfo)
+		e.label(gtx, xOf(w+2), y, h[1], colInfo)
+	}
+}
+
+// keyRows is the key reference, with ⌘ and ⇧ spelled for the platform.
+func keyRows() [][2]string {
+	rows := [][2]string{
+		{"⌘S / ⌘⇧S", "save / save as"},
+		{"⌘O", "open a file or folder by path (Tab completes)"},
+		{"⌘P or ⇧⇧", "find a file in the folder"},
+		{"⌘⇧F", "search every file in the folder"},
+		{"⌘E", "show the file's folder"},
+		{"⌘I", "file properties"},
+		{"⌘T", "open a terminal in the file's folder"},
+		{"⌘W / ⌘Q", "close the file / quit"},
+		{"⌘F, then Enter / ⇧Enter / F3", "find next / previous"},
+		{"⌘R, then Enter / ⌘Enter / ↓", "replace this match / all of them / skip"},
+		{"⌘G", "go to line[:col]"},
+		{"⌘Z / ⌘⇧Z / ⌘Y", "undo / redo"},
+		{"⌘C / ⌘X / ⌘V", "copy / cut / paste (no selection: the line)"},
+		{"⌘D", "select the word, then its next occurrence"},
+		{"⌘L", "select the line (repeat to extend)"},
+		{"⌘⇧D / ⌘⇧K", "duplicate / delete the line"},
+		{"Alt↑ / Alt↓", "move the line up / down"},
+		{"Tab / ⇧Tab", "indent / dedent"},
+		{"⌘= / ⌘- / ⌘0", "zoom in / out / reset"},
+		{"⌘⇧H", "syntax highlighting on / off"},
+		{"⌘/ or F1", "this list"},
+	}
+	for i := range rows {
+		rows[i][0] = strings.NewReplacer("⌘", shortcutName, "⇧", shiftName).Replace(rows[i][0])
+	}
+	return rows
+}
+
+// drawKeys shows the key reference in a box in the middle of the text.
+func (e *Editor) drawKeys(gtx layout.Context, width, bottom int) {
+	rows := keyRows()
+	lh := e.lineH
+	keyW, cols := 0, 0
+	for _, r := range rows {
+		keyW = max(keyW, utf8.RuneCountInString(r[0]))
+	}
+	for _, r := range rows {
+		cols = max(cols, keyW+3+utf8.RuneCountInString(r[1]))
+	}
+	pad := gtx.Dp(16)
+	maxCols := int(float32(width-2*pad-gtx.Dp(24)) / e.charW)
+	cols = min(cols, max(keyW+3, maxCols))
+	n := min(len(rows), max(1, (bottom-gtx.Dp(24))/lh-2))
+	w := int(float32(cols)*e.charW) + 2*pad
+	h := (n+1)*lh + gtx.Dp(12) + gtx.Dp(8)
+	r := image.Rect((width-w)/2, (bottom-h)/2, (width+w)/2, (bottom+h)/2)
+	e.panel(gtx, r)
+
+	x, y := r.Min.X+pad, r.Min.Y+gtx.Dp(8)
+	e.labelFont(gtx, x, y, "keys", colAccent, true)
+	esc := "Esc closes"
+	e.label(gtx, r.Max.X-pad-int(float32(len(esc))*e.charW), y, esc, colInfo)
+	y += lh + gtx.Dp(4)
+	for i, row := range rows[:n] {
+		if i == n-1 && n < len(rows) {
+			e.label(gtx, x, y, "…", colInfo) // a small window cuts the list short
+			break
+		}
+		e.label(gtx, x, y, row[0], colText)
+		e.label(gtx, x+int(float32(keyW+3)*e.charW), y, truncLeft(row[1], cols-keyW-3), colInfo)
+		y += lh
 	}
 }
 
@@ -130,7 +240,7 @@ func (e *Editor) drawInfo(gtx layout.Context, width, bottom int) {
 		if p.key == "" {
 			vx, room = x, cols
 		} else {
-			e.label(gtx, x, y, p.key, tokColors[tokComment])
+			e.label(gtx, x, y, p.key, colInfo)
 		}
 		c := colText
 		if p.key == "" {
@@ -161,7 +271,7 @@ func (e *Editor) drawGrep(gtx layout.Context, width, bottom int) {
 		case g.results != nil:
 			msg = "searching…"
 		}
-		e.label(gtx, pad, top+gtx.Dp(4), msg, tokColors[tokComment])
+		e.label(gtx, pad, top+gtx.Dp(4), msg, colInfo)
 		return
 	}
 	g.top = min(g.top, g.sel)
@@ -184,7 +294,7 @@ func (e *Editor) drawGrep(gtx layout.Context, width, bottom int) {
 			fill(gtx, image.Rect(0, y, width, y+lh), colSel)
 			fill(gtx, image.Rect(0, y, gtx.Dp(3), y+lh), colAccent)
 		}
-		e.label(gtx, pad, y, truncLeft(fmt.Sprintf("%s:%d", h.path, h.line+1), pw), tokColors[tokComment])
+		e.label(gtx, pad, y, truncLeft(fmt.Sprintf("%s:%d", h.path, h.line+1), pw), colInfo)
 
 		text, col, cut := h.text, h.col, h.cut
 		lead := min(col, len(text)-len(strings.TrimLeft(text, " \t")))

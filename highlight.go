@@ -17,6 +17,7 @@ const (
 	tokTime
 	tokError
 	tokWarn
+	tokDir // a folder in a listing
 )
 
 // A span colors line[start:end].

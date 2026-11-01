@@ -162,7 +162,7 @@ func (l *lang) scanDir(line string, st int, out []span) ([]span, int) {
 	name := strings.TrimRight(line[:end], " ")
 	switch {
 	case strings.HasSuffix(name, "/"):
-		out = append(out, span{0, len(name), tokTag})
+		out = append(out, span{0, len(name), tokDir})
 	case strings.HasPrefix(name, "."):
 		out = append(out, span{0, len(name), tokComment})
 	}

@@ -16,10 +16,10 @@ import (
 )
 
 // TestRender draws the editor offscreen. Set NIB_SHOT=out.png to save it,
-// NIB_FILE to pick the file or folder and NIB_LINE to put the cursor on a
-// line. NIB_FINDER=query opens the file finder, NIB_INFO=1 the properties,
+// NIB_FILE to pick the file or folder and NIB_LINE=line[:col] to put the
+// cursor there. NIB_FINDER=query opens the file finder, NIB_INFO=1 the properties,
 // NIB_GREP=query the folder search and NIB_REPLACE=old:new the replace
-// prompt.
+// prompt, NIB_KEYS=1 the key reference and NIB_FILE=- an empty scratch buffer.
 func TestRender(t *testing.T) {
 	out := os.Getenv("NIB_SHOT")
 	if out == "" {
@@ -33,11 +33,16 @@ func TestRender(t *testing.T) {
 	defer win.Release()
 
 	e := NewEditor(orDefault(os.Getenv("NIB_FILE"), "editor.go"))
+	if os.Getenv("NIB_FILE") == "-" {
+		e = NewEditor("")
+	}
 	e.focused = true
 	e.cursor = Pos{98, 12}
 	e.anchor = Pos{96, 2}
-	if n, err := strconv.Atoi(os.Getenv("NIB_LINE")); err == nil {
-		e.cursor, e.anchor = Pos{n - 1, 0}, Pos{n - 1, 0}
+	if l, c, _ := strings.Cut(os.Getenv("NIB_LINE"), ":"); l != "" {
+		n, _ := strconv.Atoi(l)
+		col, _ := strconv.Atoi(c)
+		e.cursor, e.anchor = Pos{n - 1, col}, Pos{n - 1, col}
 	}
 	e.followCursor = true
 	var ops op.Ops
@@ -70,6 +75,11 @@ func TestRender(t *testing.T) {
 	}
 	if os.Getenv("NIB_INFO") != "" {
 		e.info = true
+		ops.Reset()
+		e.Layout(gtx)
+	}
+	if os.Getenv("NIB_KEYS") != "" {
+		e.keys = true
 		ops.Reset()
 		e.Layout(gtx)
 	}

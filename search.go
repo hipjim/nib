@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // searchChunk is how many lines one worker searches at a time.
@@ -69,6 +70,81 @@ func (s *lineStore) searchLines(ranges []lineRange, backward bool, index func(st
 		return found[b], true
 	}
 	return Pos{}, false
+}
+
+// countMatches counts the matches of a query on all cores, chunk by chunk
+// in file order, and how many start before at. Workers stop once budget has
+// passed; the result then covers the longest run of finished chunks from the
+// start of the file, and complete is false.
+func (s *lineStore) countMatches(index func(string) int, qlen int, at Pos, budget time.Duration) (total, before int, complete bool) {
+	n := (s.count + searchChunk - 1) / searchChunk
+	if n == 0 {
+		return 0, 0, true
+	}
+	type counts struct {
+		n, before int
+		done      bool
+	}
+	res := make([]counts, n)
+	start := time.Now()
+	workers := min(runtime.NumCPU(), n)
+	ok := parallelFor(workers, 1, func(_, _, w int) {
+		for i := w; i < n; i += workers {
+			if time.Since(start) > budget {
+				return
+			}
+			r := lineRange{i * searchChunk, min(s.count, (i+1)*searchChunk)}
+			c, b := s.countRange(r, at, index, qlen)
+			res[i] = counts{c, b, true}
+		}
+	})
+	if !ok {
+		return 0, 0, false
+	}
+	for _, c := range res {
+		if !c.done {
+			return total, before, false
+		}
+		total += c.n
+		before += c.before
+	}
+	return total, before, true
+}
+
+// countRange counts the matches in lines [r.a, r.b) and how many start
+// before at.
+func (s *lineStore) countRange(r lineRange, at Pos, index func(string) int, qlen int) (n, before int) {
+	bi := sort.Search(len(s.blocks), func(x int) bool { return s.first[x] > r.a }) - 1
+	for ; bi < len(s.blocks) && s.first[bi] < r.b; bi++ {
+		k := s.blocks[bi]
+		j0 := max(r.a, s.first[bi]) - s.first[bi]
+		j1 := min(r.b, s.first[bi]+k.n()) - s.first[bi]
+		// Whole blocks before at count without locating each match.
+		all := s.first[bi]+j1 <= at.Line
+		none := s.first[bi]+j0 > at.Line
+		each := func(line int, text string, off int) {
+			for o := 0; o <= len(text); {
+				m := index(text[o:])
+				if m < 0 {
+					return
+				}
+				n++
+				if all || !none && s.posIn(k, bi, line, off+o+m).Less(at) {
+					before++
+				}
+				o += m + qlen
+			}
+		}
+		if k.idx != nil {
+			start, end := k.base+int(k.idx[j0]), k.base+int(k.idx[j1])-1
+			each(-1, s.data[start:end], start)
+			continue
+		}
+		for j := j0; j < j1; j++ {
+			each(s.first[bi]+j, k.lines[j], 0)
+		}
+	}
+	return n, before
 }
 
 // searchRange finds the first or last match in lines [r.a, r.b). It only

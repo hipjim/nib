@@ -34,7 +34,8 @@ var (
 	colBg       = rgb(0x0b0d10)
 	colCurLine  = rgb(0x12161c)
 	colText     = rgb(0xc8d0da)
-	colDim      = rgb(0x3a4250)
+	colDim      = rgb(0x3a4250) // line numbers, scrollbar: meant to recede
+	colInfo     = rgb(0x5f6b7c) // status details, comments: meant to be read
 	colGutterHi = rgb(0x8b95a5)
 	colAccent   = rgb(0x3ee6a8)
 	colSel      = rgb(0x17463a)
@@ -46,14 +47,15 @@ var (
 // Syntax colors, indexed by token class.
 var tokColors = [...]color.NRGBA{
 	tokPlain:   colText,
-	tokComment: rgb(0x5f6b7c),
+	tokComment: colInfo,
 	tokString:  rgb(0x7fd4a6),
 	tokNumber:  rgb(0xd9b56c),
 	tokKeyword: rgb(0xf4f7fa),
 	tokTag:     rgb(0x86a6cc),
-	tokTime:    rgb(0x5f6b7c),
+	tokTime:    colInfo,
 	tokError:   colWarn,
 	tokWarn:    rgb(0xe8b84e),
+	tokDir:     rgb(0x7cb3e8),
 }
 
 func rgb(c uint32) color.NRGBA { return argb(0xff000000 | c) }
@@ -82,6 +84,9 @@ const blinkPeriod = 530 * time.Millisecond
 // shortcutName is how key.ModShortcut is written in messages.
 var shortcutName = map[bool]string{true: "⌘", false: "Ctrl+"}[runtime.GOOS == "darwin"]
 
+// shiftName is how key.ModShift is written after shortcutName.
+var shiftName = map[bool]string{true: "⇧", false: "Shift+"}[runtime.GOOS == "darwin"]
+
 type Editor struct {
 	*doc          // the current document
 	docs   []*doc // open documents, most recent first
@@ -90,6 +95,8 @@ type Editor struct {
 	grep   grep
 	plain  bool // syntax highlighting turned off
 	info   bool // file properties panel shown
+	keys   bool // key reference panel shown
+	count  matchCount
 
 	followCursor bool
 	bar          scrollbar
@@ -721,10 +728,10 @@ var navKeys = []key.Name{
 	key.NameLeftArrow, key.NameRightArrow, key.NameUpArrow, key.NameDownArrow,
 	key.NameHome, key.NameEnd, key.NamePageUp, key.NamePageDown,
 	key.NameDeleteBackward, key.NameDeleteForward, key.NameReturn, key.NameEnter,
-	key.NameTab, key.NameEscape, key.NameF3,
+	key.NameTab, key.NameEscape, key.NameF1, key.NameF3,
 }
 
-var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0"}
+var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0", "/"}
 
 func (e *Editor) filters() []event.Filter {
 	fs := []event.Filter{
@@ -932,6 +939,8 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 			e.up()
 		case "I":
 			e.info = !e.info
+		case "/":
+			e.keys = !e.keys
 		case "W":
 			e.closeDoc(discardOK)
 		case "Q":
@@ -1095,7 +1104,9 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 		}
 	case key.NameEscape:
 		e.anchor = e.cursor
-		e.info = false
+		e.info, e.keys = false, false
+	case key.NameF1:
+		e.keys = !e.keys
 	case key.NameF3:
 		e.findNext(shift)
 	}
@@ -1162,7 +1173,7 @@ func (e *Editor) promptKey(k key.Event) bool {
 		}
 		e.prompt = promptNone
 		return false
-	case "A", "C", "X", "Z", "Y", "S", "O", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0":
+	case "A", "C", "X", "Z", "Y", "S", "O", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0", "/", key.NameF1:
 		// Any other shortcut closes the prompt and runs normally.
 		e.prompt = promptNone
 		return false
@@ -1319,6 +1330,8 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 		e.drawFinder(gtx, size.X, textH)
 	} else if e.prompt == promptGrep {
 		e.drawGrep(gtx, size.X, textH)
+	} else if e.keys {
+		e.drawKeys(gtx, size.X, textH)
 	} else if e.info {
 		e.drawInfo(gtx, size.X, textH)
 	}
@@ -1455,6 +1468,16 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 		}
 	}
 
+	if !hasSel {
+		if a, b, ok := e.bracketPair(first, last); ok {
+			e.outlineCell(gtx, xOf, a, sy)
+			e.outlineCell(gtx, xOf, b, sy)
+		}
+	}
+	if e.path == "" && e.dir == nil && e.prompt == promptNone && e.buf.LineCount() == 1 && e.buf.Line(0) == "" {
+		e.drawHint(gtx, xOf, sy)
+	}
+
 	// Cursor.
 	if e.focused && e.prompt == promptNone {
 		since := gtx.Now.Sub(e.blinkStart)
@@ -1556,7 +1579,9 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	if e.prompt == promptWith {
 		right = "Enter replace · " + shortcutName + "Enter all · ↓ skip"
 	}
-	if a, b, ok := e.sel(); ok && e.prompt != promptFiles && e.prompt != promptGrep && e.prompt != promptWith {
+	if s := e.matchCountText(); s != "" {
+		right = s + "  " + right
+	} else if a, b, ok := e.sel(); ok && e.prompt != promptFiles && e.prompt != promptGrep && e.prompt != promptWith {
 		if a.Line == b.Line {
 			right = fmt.Sprintf("(%d sel)  ", utf8.RuneCountInString(e.buf.Text(a, b))) + right
 		} else {
@@ -1564,7 +1589,7 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 		}
 	}
 	rx := r.Max.X - pad - int(float32(utf8.RuneCountInString(right))*cw)
-	e.label(gtx, rx, y, right, colDim)
+	e.label(gtx, rx, y, right, colInfo)
 
 	x := r.Min.X + pad
 	if e.prompt != promptNone {
@@ -1580,7 +1605,7 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 		x += int(float32(utf8.RuneCountInString(lbl)+1) * cw)
 		e.label(gtx, x, y, e.input, colText)
 		cx := x + int(float32(utf8.RuneCountInString(e.input))*cw)
-		fill(gtx, image.Rect(cx, y+gtx.Dp(2), cx+int(cw), y+e.lineH-gtx.Dp(2)), colAccent)
+		fill(gtx, image.Rect(cx, y+gtx.Dp(2), cx+gtx.Dp(2), y+e.lineH-gtx.Dp(2)), colAccent)
 		return
 	}
 
@@ -1606,7 +1631,7 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	e.label(gtx, x, y, name, colText)
 	x += int(float32(utf8.RuneCountInString(name)+3) * cw)
 	if e.msg != "" && utf8.RuneCountInString(e.msg) <= room-utf8.RuneCountInString(name)-3 {
-		c := colDim
+		c := colInfo
 		if e.msgWarn {
 			c = colWarn
 		}

@@ -374,6 +374,16 @@ func (b *Buffer) Find(q string, from Pos, backward bool) (Pos, bool) {
 	return b.lines.searchLines([]lineRange{{0, l}, {l, n}}, true, index)
 }
 
+// CountMatches counts the non-overlapping matches of q, and how many of them
+// start before at. It gives up after budget: then both counts cover only
+// the first lines of the file and complete is false.
+func (b *Buffer) CountMatches(q string, at Pos, budget time.Duration) (total, before int, complete bool) {
+	if q == "" || strings.Contains(q, "\n") {
+		return 0, 0, true
+	}
+	return b.lines.countMatches(matcher(q), len(q), at, budget)
+}
+
 // matcher returns a function that finds q in a line. A lower-case query
 // matches case-insensitively without allocating for ASCII queries.
 func matcher(q string) func(string) int {

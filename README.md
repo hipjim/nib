@@ -70,12 +70,14 @@ nib             # pick up where you left off
 Everything you would expect, and fast in files of any size: undo and redo,
 selections with the mouse and keyboard, word moves, auto-indent, indenting and
 dedenting blocks, moving and duplicating lines, copying the whole line when
-nothing is selected, and `⌘D` to select the next occurrence of a word. Tabs or
-spaces and LF or CRLF line endings are detected and kept.
+nothing is selected, and `⌘D` to select the next occurrence of a word. The
+bracket at the cursor and its partner are outlined. Tabs or spaces and LF or
+CRLF line endings are detected and kept. `⌘/` lists every key.
 
 ### Find, replace and search the folder
 
-- **`⌘F`** finds as you type, from the cursor; `Enter` goes to the next match.
+- **`⌘F`** finds as you type, from the cursor; `Enter` goes to the next match
+  and the status bar counts them ("3 of 128").
 - **`⌘R`** replaces: type what to find, `Enter`, then the replacement. `Enter`
   replaces the selected match and moves on, `↓` skips it, and `⌘Enter`
   replaces every match in the file as one undo step (5 million matches in a
@@ -100,8 +102,8 @@ A lower-case query ignores case; one with a capital letter matches exactly.
 - **`⌘P`**, or tapping Shift twice, finds any file under the folder from a few
   letters of its path, like fzf. It skips `.git`, `node_modules` and
   `.gitignore` matches, and ranks 40,000 paths in a millisecond. Files you have
-  open are listed first; they stay open in the background with their cursor,
-  undo history and unsaved edits.
+  open are listed first and marked with a dot; they stay open in the background
+  with their cursor, undo history and unsaved edits.
 - **`⌘I`** shows a file's properties: size, lines, created, modified and
   accessed times, permissions and owner.
 - **`⌘T`** opens a terminal in the folder of the current file: on macOS the
@@ -153,6 +155,7 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 | `Tab` / `⇧Tab` | indent / dedent (works on selections) |
 | `⌘=` / `⌘-` / `⌘0` | zoom in / out / reset |
 | `⌘⇧H` | syntax highlighting on / off |
+| `⌘/` or `F1` | show this list in the editor |
 | `Esc` | clear the selection, close a prompt or panel |
 
 Double-click selects a word, triple-click a line. Drag the scrollbar, or click
