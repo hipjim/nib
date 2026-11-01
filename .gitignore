@@ -5,3 +5,4 @@
 !/appicon.png
 *.syso
 /dist/
+.idea/

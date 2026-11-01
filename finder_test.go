@@ -35,11 +35,11 @@ func TestFuzzyRank(t *testing.T) {
 	if f.matches != 0 {
 		t.Fatalf("Edit: got %v", f.results)
 	}
-	// With no query, open files come first.
-	f.query, f.recent = "", []string{"lines.go"}
+	// With no query, only the open files are listed, as a switcher.
+	f.query, f.recent = "", []string{"lines.go", "~/other/x.go"}
 	f.rank()
-	if f.results[0].path != "lines.go" || len(f.results) != 5 {
-		t.Fatalf("recent: got %v", f.results)
+	if len(f.results) != 2 || f.results[0].path != "lines.go" || f.results[1].path != "~/other/x.go" || f.matches != 5 {
+		t.Fatalf("recent: got %v, %d matches", f.results, f.matches)
 	}
 }
 

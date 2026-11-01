@@ -16,7 +16,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
-<p align="center"><img src="docs/code.png" width="760" alt="nib editing Go code"></p>
+<p align="center"><img src="docs/demo.gif" width="760" alt="nib finding a file, searching the folder, opening a 1 GB log and replacing 716,219 matches in it"></p>
+<p align="center"><sub>Recorded from the editor itself by <code>go test -run TestGif</code>; the times in the status bar are measured.</sub></p>
 
 nib is a plain text editor that stays fast no matter what you open: a log of
 millions of lines, a database dump, a minified bundle with one 18 MB line. It
@@ -74,6 +75,17 @@ nothing is selected, and `⌘D` to select the next occurrence of a word. The
 bracket at the cursor and its partner are outlined. Tabs or spaces and LF or
 CRLF line endings are detected and kept. `⌘/` lists every key.
 
+### Open files
+
+With two or more files open, a tab bar lists them in the order they were
+opened, with a dot on the unsaved ones. Click a tab to switch, middle-click
+to close it. `Ctrl+Tab` and `Ctrl+⇧Tab` go to the next and previous tab,
+`⌘1` to `⌘9` to the nth, `⌘W` closes the current file and `⌘⇧W` every
+other saved one. `⌘P` with nothing typed lists the open files most recent
+first, so `⌘P`, `Enter` switches back to the last one.
+
+<p align="center"><img src="docs/code.png" width="760" alt="three files open in tabs, with the bracket pair at the cursor outlined"></p>
+
 ### Find, replace and search the folder
 
 - **`⌘F`** finds as you type, from the cursor; `Enter` goes to the next match
@@ -100,10 +112,10 @@ A lower-case query ignores case; one with a capital letter matches exactly.
   few letters of a name to jump to it, as in Finder. `Enter` opens, `←` or
   `Backspace` goes up, and `⌘E` jumps from a file to its folder.
 - **`⌘P`**, or tapping Shift twice, finds any file under the folder from a few
-  letters of its path, like fzf. It skips `.git`, `node_modules` and
-  `.gitignore` matches, and ranks 40,000 paths in a millisecond. Files you have
-  open are listed first and marked with a dot; they stay open in the background
-  with their cursor, undo history and unsaved edits.
+  letters of its path, like fzf: `edgo` finds `editor.go`. The folder is the
+  one nib was started in or last opened. It skips `.git`, `node_modules` and
+  `.gitignore` matches, and ranks 40,000 paths in a millisecond. Files you
+  have open are listed first and marked with a dot.
 - **`⌘I`** shows a file's properties: size, lines, created, modified and
   accessed times, permissions and owner.
 - **`⌘T`** opens a terminal in the folder of the current file: on macOS the
@@ -123,7 +135,9 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 
 - Quitting or closing the window with unsaved files asks first; quit again to
   discard them.
-- `nib` with no arguments reopens your last files where you left them.
+- `nib` with no arguments reopens your last files where you left them. A
+  restored file you do not touch for two sessions in a row is dropped, so a
+  file opened once by accident does not come back forever.
 - Files that change on disk reload by themselves. With the cursor on the last
   line, nib follows new lines like `tail -f`. A file you have edited is never
   replaced, and saving over a newer version on disk asks first.
@@ -140,7 +154,9 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 | `⌘E` | show the current file's folder |
 | `⌘I` | file properties |
 | `⌘T` | open a terminal in the file's folder |
-| `⌘W` | close the file |
+| `⌘W` / `⌘⇧W` | close the file / every other saved file |
+| `Ctrl+Tab` / `Ctrl+⇧Tab` | next / previous tab |
+| `⌘1` … `⌘9` | go to that tab |
 | `⌘Q` | quit (asks if anything is unsaved) |
 | `⌘F`, then `Enter` / `⇧Enter` / `F3` | find next / previous |
 | `⌘R`, then `Enter` / `⌘Enter` / `↓` | replace this match / all of them / skip |
@@ -210,6 +226,7 @@ everyday code, while nib does only what is on screen. Run
 go test ./...                                                 # tests
 NIB_FILE=big.xml go test -run '^$' -bench Big .               # load, edit, find and save benchmarks
 NIB_SHOT=out.png NIB_FILE=main.go go test -run TestRender .   # offscreen screenshot
+NIB_GIF=docs/demo.gif go test -run TestGif .                 # the README demo, needs ~1 GB of disk for a while
 ```
 
 Every push is tested on macOS, Linux and Windows. Pushing a tag like `v1.2.3`

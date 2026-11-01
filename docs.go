@@ -21,10 +21,32 @@ type doc struct {
 	goal     int     // visual column kept across vertical moves; -1 if unset
 	scrollY  float64 // pixels; float32 is too coarse past ~16M px
 	scrollX  float32
-	dir      *dirView // set for a folder listing
-	stamp    stamp    // the file on disk when last read or written
-	conflict bool     // changed on disk while edited here
-	pending  *place   // cursor to restore once loading finishes
+	dir      *dirView  // set for a folder listing
+	stamp    stamp     // the file on disk when last read or written
+	conflict bool      // changed on disk while edited here
+	pending  *place    // cursor to restore once loading finishes
+	opened   int       // order of opening, for the tab bar
+	used     bool      // shown by the user this session, not just restored
+	idle     int       // sessions in a row restored but not used
+	loadAt   time.Time // when a file still being indexed was opened
+}
+
+// openedMsg says how many lines a file has and, unless it was instant,
+// how long it took to open.
+func openedMsg(lines int, d time.Duration) string {
+	return "opened " + groupDigits(int64(lines)) + " lines" + tookText(d)
+}
+
+// tookText is " in 42 ms" or " in 1.3 s", or nothing when d is too short
+// to matter.
+func tookText(d time.Duration) string {
+	switch {
+	case d < 10*time.Millisecond:
+		return ""
+	case d < time.Second:
+		return fmt.Sprintf(" in %d ms", d.Milliseconds())
+	}
+	return fmt.Sprintf(" in %.1f s", d.Seconds())
 }
 
 func newDoc(path string, b *Buffer) *doc {
@@ -41,6 +63,13 @@ func (e *Editor) show(d *doc) {
 	e.docs = slices.Insert(e.docs, 0, d)
 	e.doc = d
 	e.followCursor = true
+	if d.opened == 0 {
+		e.nextOpen++
+		d.opened = e.nextOpen
+	}
+	if !e.restoring {
+		d.used = true
+	}
 }
 
 func (e *Editor) open(path string) {
@@ -59,18 +88,21 @@ func (e *Editor) open(path string) {
 			return
 		}
 	}
+	t0 := time.Now()
 	b, err := Load(path)
+	d := newDoc(path, b)
 	switch {
 	case os.IsNotExist(err):
-		b = NewBuffer("")
+		d.buf = NewBuffer("")
 		e.flash("new file", false)
 	case err != nil:
 		e.flash(err.Error(), true)
 		return
+	case b.Loading():
+		d.loadAt = t0 // reported once the lines are indexed
 	default:
-		e.flash(fmt.Sprintf("opened %d lines", b.LineCount()), false)
+		e.flash(openedMsg(b.LineCount(), time.Since(t0)), false)
 	}
-	d := newDoc(path, b)
 	d.stamp = statStamp(path)
 	e.show(d)
 }
@@ -226,6 +258,7 @@ func (e *Editor) closeDoc(discardOK bool) {
 		e.docs = []*doc{newDoc("", NewBuffer(""))}
 	}
 	e.doc = e.docs[0]
+	e.doc.used = true
 	e.followCursor = true
 }
 
@@ -236,9 +269,7 @@ func (e *Editor) openFinder() {
 	f.recent = f.recent[:0]
 	for _, d := range e.docs[1:] {
 		if d.dir == nil && d.path != "" {
-			if rel, err := filepath.Rel(e.root, d.path); err == nil {
-				f.recent = append(f.recent, filepath.ToSlash(rel))
-			}
+			f.recent = append(f.recent, finderPath(e.root, d.path))
 		}
 	}
 	f.query, f.sel = "", 0

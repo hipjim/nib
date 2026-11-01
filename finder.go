@@ -53,6 +53,24 @@ type result struct {
 	score int
 }
 
+// finderPath is how the finder names an open file: relative to root when
+// under it, else with ~ for the home folder.
+func finderPath(root, path string) string {
+	if rel, err := filepath.Rel(root, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return filepath.ToSlash(rel)
+	}
+	return filepath.ToSlash(shortPath(path))
+}
+
+// fullPath undoes finderPath.
+func fullPath(root, p string) string {
+	p = filepath.FromSlash(p)
+	if p == "~" || strings.HasPrefix(p, "~"+string(filepath.Separator)) || filepath.IsAbs(p) {
+		return expandHome(p)
+	}
+	return filepath.Join(root, p)
+}
+
 // start walks root unless a recent walk of it is still good.
 func (f *finder) start(root string) {
 	if f.root == root && time.Since(f.started) < rewalkAfter {
@@ -170,18 +188,10 @@ func (f *finder) rank() {
 		isRecent[p] = len(f.recent) - i
 	}
 	if f.query == "" {
+		// No query lists the open files, all of them, as a switcher.
 		for _, p := range f.recent {
 			f.results = append(f.results, result{p, 0})
 		}
-		for _, p := range f.paths {
-			if len(f.results) == maxResults {
-				break
-			}
-			if isRecent[p] == 0 {
-				f.results = append(f.results, result{p, 0})
-			}
-		}
-		f.results = f.results[:min(len(f.results), maxResults)]
 		f.matches = len(f.paths)
 		f.sel = min(f.sel, max(0, len(f.results)-1))
 		return

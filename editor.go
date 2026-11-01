@@ -98,6 +98,11 @@ type Editor struct {
 	keys   bool // key reference panel shown
 	count  matchCount
 
+	nextOpen  int  // tabs: opening order of the last document opened
+	tabScroll int  // tabs: pixels scrolled when they do not fit
+	tabHover  *doc // tabs: the one under the pointer
+	restoring bool // documents are being reopened from the session
+
 	followCursor bool
 	bar          scrollbar
 	watch        watcher
@@ -611,7 +616,7 @@ func (e *Editor) submitPrompt() {
 		}
 	case promptFiles:
 		if f := &e.finder; f.sel < len(f.results) {
-			e.open(filepath.Join(f.root, filepath.FromSlash(f.results[f.sel].path)))
+			e.open(fullPath(f.root, f.results[f.sel].path))
 		}
 	case promptReplace:
 		e.prompt = promptReplace
@@ -669,6 +674,7 @@ func (e *Editor) replaceAll() {
 	if e.locked() {
 		return
 	}
+	t0 := time.Now()
 	n := e.buf.ReplaceAll(e.findQuery, e.replaceBy, e.cursor)
 	e.prompt = promptNone
 	c := e.buf.Clamp(e.cursor)
@@ -682,7 +688,7 @@ func (e *Editor) replaceAll() {
 	case 1:
 		e.flash("replaced 1 match", false)
 	default:
-		e.flash("replaced "+groupDigits(int64(n))+" matches", false)
+		e.flash("replaced "+groupDigits(int64(n))+" matches"+tookText(time.Since(t0)), false)
 	}
 }
 
@@ -731,7 +737,7 @@ var navKeys = []key.Name{
 	key.NameTab, key.NameEscape, key.NameF1, key.NameF3,
 }
 
-var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0", "/"}
+var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0", "/", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
 
 func (e *Editor) filters() []event.Filter {
 	fs := []event.Filter{
@@ -796,6 +802,7 @@ func (e *Editor) events(gtx layout.Context) {
 		}
 	}
 
+	e.tabEvents(gtx)
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
 			Target:  &e.bar,
@@ -833,6 +840,11 @@ func (e *Editor) pointer(gtx layout.Context, ev pointer.Event) {
 		e.scrollX += ev.Scroll.X
 	case pointer.Press:
 		if !ev.Buttons.Contain(pointer.ButtonPrimary) {
+			return
+		}
+		if e.prompt == promptFiles || e.prompt == promptGrep || e.keys {
+			// The panel covers the text; a click puts it away.
+			e.prompt, e.keys = promptNone, false
 			return
 		}
 		gtx.Execute(key.FocusCmd{Tag: e})
@@ -942,7 +954,13 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 		case "/":
 			e.keys = !e.keys
 		case "W":
-			e.closeDoc(discardOK)
+			if shift {
+				e.closeOthers()
+			} else {
+				e.closeDoc(discardOK)
+			}
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			e.showTab(int(k.Name[0] - '1'))
 		case "Q":
 			if e.Quit != nil {
 				e.Quit()
@@ -1090,6 +1108,10 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 	case key.NameReturn, key.NameEnter:
 		e.newline()
 	case key.NameTab:
+		if m.Contain(key.ModCtrl) {
+			e.cycleTab(shift)
+			return
+		}
 		a, b, _ := e.sel()
 		switch {
 		case shift:
@@ -1173,11 +1195,16 @@ func (e *Editor) promptKey(k key.Event) bool {
 		}
 		e.prompt = promptNone
 		return false
-	case "A", "C", "X", "Z", "Y", "S", "O", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0", "/", key.NameF1:
+	case "A", "C", "X", "Z", "Y", "S", "O", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0", "/",
+		"1", "2", "3", "4", "5", "6", "7", "8", "9", key.NameF1:
 		// Any other shortcut closes the prompt and runs normally.
 		e.prompt = promptNone
 		return false
 	case key.NameTab:
+		if k.Modifiers.Contain(key.ModCtrl) {
+			e.prompt = promptNone
+			return false
+		}
 		if e.prompt == promptOpen || e.prompt == promptSaveAs {
 			e.input = completePath(e.input)
 		}
@@ -1280,6 +1307,9 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	}
 	if e.buf.Poll() {
 		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(30 * time.Millisecond)})
+	} else if !e.loadAt.IsZero() {
+		e.flash(openedMsg(e.buf.LineCount(), time.Since(e.loadAt)), false)
+		e.loadAt = time.Time{}
 	}
 	if e.prompt == promptGrep {
 		if _, running := e.grep.poll(); running {
@@ -1307,7 +1337,8 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 
 	size := gtx.Constraints.Max
 	statusH := e.lineH + gtx.Dp(6)
-	textH := max(0, size.Y-statusH)
+	tabH := e.tabHeight(gtx)
+	textH := max(0, size.Y-statusH-tabH)
 	digits := max(3, len(strconv.Itoa(e.buf.LineCount())))
 	gutterW := int(float32(digits+3) * e.charW)
 	e.textX = gutterW + gtx.Dp(8)
@@ -1316,6 +1347,12 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	e.scrollIntoView()
 
 	fill(gtx, image.Rect(0, 0, size.X, size.Y), colBg)
+	if tabH > 0 {
+		e.drawTabs(gtx, size.X, tabH)
+	}
+	// Everything below the tabs is drawn, and gets its pointer events,
+	// relative to the top of the text.
+	defer op.Offset(image.Pt(0, tabH)).Push(gtx.Ops).Pop()
 
 	// Text area with input handling.
 	area := clip.Rect(image.Rect(0, 0, size.X, textH)).Push(gtx.Ops)
@@ -1336,7 +1373,7 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 		e.drawInfo(gtx, size.X, textH)
 	}
 
-	e.drawStatus(gtx, image.Rect(0, textH, size.X, size.Y))
+	e.drawStatus(gtx, image.Rect(0, textH, size.X, textH+statusH))
 
 	quitOK.Store(e.unsaved() == 0 || e.quitArmed)
 	e.watch.sync(e.docs)
@@ -1553,8 +1590,8 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	if e.buf.CRLF {
 		eol = "CRLF"
 	}
-	right := fmt.Sprintf("%d:%d  %s  %s  %d lines", e.cursor.Line+1,
-		e.buf.VisCol(e.cursor.Line, e.cursor.Col)+1, ind, eol, e.buf.LineCount())
+	right := fmt.Sprintf("%d:%d  %s  %s  %s lines", e.cursor.Line+1,
+		e.buf.VisCol(e.cursor.Line, e.cursor.Col)+1, ind, eol, groupDigits(int64(e.buf.LineCount())))
 	if e.dir != nil {
 		right = fmt.Sprintf("%d items", e.dir.count)
 	}
@@ -1563,6 +1600,12 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	}
 	if f := &e.finder; e.prompt == promptFiles {
 		right = fmt.Sprintf("%s/%s files", groupDigits(int64(f.matches)), groupDigits(int64(len(f.paths))))
+		if f.query == "" {
+			right = "type to search " + groupDigits(int64(len(f.paths))) + " files"
+			if n := len(f.recent); n > 0 {
+				right = fmt.Sprintf("%d other open · %s", n, right)
+			}
+		}
 		if f.walking != nil {
 			right = "scanning…  " + right
 		}
@@ -1594,6 +1637,9 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	x := r.Min.X + pad
 	if e.prompt != promptNone {
 		lbl := promptLabels[e.prompt] + " ›"
+		if e.prompt == promptFiles {
+			lbl = "file in " + folderName(e.finder.root) + " ›"
+		}
 		if e.prompt == promptWith {
 			lbl = "replace " + truncLeft(e.findQuery, 30) + " with ›"
 		}
@@ -1612,30 +1658,45 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	const appName = "nib"
 	e.label(gtx, x, y, appName, colAccent)
 	x += int(float32(len(appName)+1) * cw)
-	name := "[scratch]"
+	name, short := "[scratch]", "[scratch]"
 	if e.path != "" {
-		name = shortPath(e.path)
+		name, short = shortPath(e.path), filepath.Base(e.path)
 	}
 	if e.dir != nil {
-		name = dirName(e.path)
+		name, short = dirName(e.path), dirName(e.path)
 	}
 	if e.buf.Dirty() {
-		name += " ●"
+		name, short = name+" ●", short+" ●"
 	}
 	if n := e.otherUnsaved(); n > 0 {
-		name += fmt.Sprintf("  +%d unsaved", n)
+		s := fmt.Sprintf("  +%d unsaved", n)
+		name, short = name+s, short+s
 	}
-	// Keep the left side clear of the position info on the right.
+	// Keep the left side clear of the position info on the right. A
+	// message matters more than the folder of the file, which gives way.
 	room := int(float32(rx-x)/cw) - 3
+	msg := e.msg
+	m := utf8.RuneCountInString(msg)
+	switch {
+	case msg == "" || utf8.RuneCountInString(name)+3+m <= room:
+	case utf8.RuneCountInString(short)+3+m <= room:
+		name = short
+	case m <= room:
+		name = ""
+	default:
+		msg = ""
+	}
 	name = truncLeft(name, room)
 	e.label(gtx, x, y, name, colText)
-	x += int(float32(utf8.RuneCountInString(name)+3) * cw)
-	if e.msg != "" && utf8.RuneCountInString(e.msg) <= room-utf8.RuneCountInString(name)-3 {
+	if msg != "" {
+		if name != "" {
+			x += int(float32(utf8.RuneCountInString(name)+3) * cw)
+		}
 		c := colInfo
 		if e.msgWarn {
 			c = colWarn
 		}
-		e.label(gtx, x, y, e.msg, c)
+		e.label(gtx, x, y, msg, c)
 	}
 }
 
@@ -1645,6 +1706,16 @@ func truncLeft(s string, n int) string {
 		return s
 	}
 	return "…" + string(r[len(r)-n+1:])
+}
+
+// folderName is a folder's name with a trailing separator, or the whole
+// path when it has no name of its own, like the root.
+func folderName(p string) string {
+	name := filepath.Base(p)
+	if name == "." || strings.HasSuffix(name, string(filepath.Separator)) {
+		return p
+	}
+	return name + string(filepath.Separator)
 }
 
 func shortPath(p string) string {

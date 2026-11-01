@@ -31,7 +31,10 @@ func (e *Editor) drawFinder(gtx layout.Context, width, bottom int) {
 	pad := gtx.Dp(12)
 	if len(f.results) == 0 {
 		msg := "no matches"
-		if f.walking != nil {
+		switch {
+		case f.query == "":
+			msg = "type a few letters of a file name"
+		case f.walking != nil:
 			msg = "scanning…"
 		}
 		e.label(gtx, pad, bottom-lh-gtx.Dp(4), msg, colInfo)
@@ -45,9 +48,10 @@ func (e *Editor) drawFinder(gtx layout.Context, width, bottom int) {
 		}
 	}
 	open := e.openPaths()
-	for i, r := range f.results[:rows] {
+	first := max(0, f.sel-rows+1) // scroll so the selected row is shown
+	for i, r := range f.results[first : first+rows] {
 		y := bottom - (i+1)*lh - gtx.Dp(4)
-		if i == f.sel {
+		if first+i == f.sel {
 			fill(gtx, image.Rect(0, y, width, y+lh), colSel)
 			fill(gtx, image.Rect(0, y, gtx.Dp(3), y+lh), colAccent)
 		}
@@ -78,11 +82,8 @@ func (e *Editor) drawFinder(gtx layout.Context, width, bottom int) {
 func (e *Editor) openPaths() map[string]bool {
 	m := map[string]bool{}
 	for _, d := range e.docs {
-		if d.dir != nil || d.path == "" {
-			continue
-		}
-		if rel, err := filepath.Rel(e.finder.root, d.path); err == nil {
-			m[filepath.ToSlash(rel)] = d.buf.Dirty()
+		if d.dir == nil && d.path != "" {
+			m[finderPath(e.finder.root, d.path)] = d.buf.Dirty()
 		}
 	}
 	return m
@@ -117,7 +118,10 @@ func keyRows() [][2]string {
 		{"⌘E", "show the file's folder"},
 		{"⌘I", "file properties"},
 		{"⌘T", "open a terminal in the file's folder"},
-		{"⌘W / ⌘Q", "close the file / quit"},
+		{"⌘W / ⌘⇧W", "close the file / all other saved files"},
+		{"Ctrl+Tab / Ctrl+⇧Tab", "next / previous tab"},
+		{"⌘1 … ⌘9", "go to that tab"},
+		{"⌘Q", "quit"},
 		{"⌘F, then Enter / ⇧Enter / F3", "find next / previous"},
 		{"⌘R, then Enter / ⌘Enter / ↓", "replace this match / all of them / skip"},
 		{"⌘G", "go to line[:col]"},

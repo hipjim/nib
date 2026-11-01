@@ -15,8 +15,9 @@ type place struct {
 	Line   int     `json:"line"`
 	Col    int     `json:"col"`
 	Scroll float64 `json:"scroll"`
-	End    bool    `json:"-"` // follow the end of the file
-	Select int     `json:"-"` // select this many bytes from Col
+	Idle   int     `json:"idle,omitempty"` // sessions restored but not used
+	End    bool    `json:"-"`              // follow the end of the file
+	Select int     `json:"-"`              // select this many bytes from Col
 }
 
 type session struct {
@@ -24,8 +25,13 @@ type session struct {
 	Docs []place `json:"docs"` // most recent first
 }
 
-// maxSession is how many documents a session remembers.
-const maxSession = 20
+// maxSession is how many documents a session remembers, and maxIdle how
+// many sessions in a row a restored file may go unused before it is dropped,
+// so files opened once by accident do not come back forever.
+const (
+	maxSession = 20
+	maxIdle    = 2
+)
 
 func sessionFile() string {
 	dir, err := os.UserConfigDir()
@@ -49,8 +55,12 @@ func (e *Editor) saveSession(force bool) bool {
 	s := session{Root: e.root}
 	open := map[string]bool{}
 	for _, d := range e.docs {
-		if d.path != "" && len(s.Docs) < maxSession {
-			s.Docs = append(s.Docs, place{Path: d.path, Line: d.cursor.Line, Col: d.cursor.Col, Scroll: d.scrollY})
+		idle := d.idle + 1
+		if d.used || d.buf.Dirty() {
+			idle = 0
+		}
+		if d.path != "" && idle < maxIdle && len(s.Docs) < maxSession {
+			s.Docs = append(s.Docs, place{Path: d.path, Line: d.cursor.Line, Col: d.cursor.Col, Scroll: d.scrollY, Idle: idle})
 			open[d.path] = true
 		}
 	}
@@ -99,16 +109,20 @@ func (e *Editor) restoreSession() {
 	if fi, err := os.Stat(s.Root); err == nil && fi.IsDir() {
 		e.root = s.Root
 	}
+	e.restoring = true
+	defer func() { e.restoring = false }()
 	for _, p := range slices.Backward(s.Docs) {
 		if _, err := os.Stat(p.Path); err != nil {
 			continue
 		}
 		e.open(p.Path)
 		if e.path == filepath.Clean(p.Path) {
+			e.idle = p.Idle
 			e.pending = &p
 			e.applyPending()
 		}
 	}
+	e.doc.used = true // the one on screen stays
 	e.msg = ""
 }
 

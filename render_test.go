@@ -19,7 +19,8 @@ import (
 // NIB_FILE to pick the file or folder and NIB_LINE=line[:col] to put the
 // cursor there. NIB_FINDER=query opens the file finder, NIB_INFO=1 the properties,
 // NIB_GREP=query the folder search and NIB_REPLACE=old:new the replace
-// prompt, NIB_KEYS=1 the key reference and NIB_FILE=- an empty scratch buffer.
+// prompt, NIB_KEYS=1 the key reference, NIB_TABS=a,b opens more files and
+// NIB_FILE=- an empty scratch buffer.
 func TestRender(t *testing.T) {
 	out := os.Getenv("NIB_SHOT")
 	if out == "" {
@@ -60,6 +61,17 @@ func TestRender(t *testing.T) {
 		start := time.Now()
 		e.Layout(gtx)
 		t.Logf("layout: %v", time.Since(start))
+	}
+	if tabs := os.Getenv("NIB_TABS"); tabs != "" {
+		// Open more files, the last one edited, and come back to the first.
+		first := e.doc
+		for _, p := range strings.Split(tabs, ",") {
+			e.open(p)
+		}
+		e.insert("x")
+		e.show(first)
+		ops.Reset()
+		e.Layout(gtx)
 	}
 	if q, ok := os.LookupEnv("NIB_FINDER"); ok {
 		e.openFinder()
