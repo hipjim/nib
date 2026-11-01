@@ -14,7 +14,6 @@ import (
 	"gioui.org/layout"
 )
 
-// panel draws a box with a border above the status bar.
 func (e *Editor) panel(gtx layout.Context, r image.Rectangle) {
 	fill(gtx, r, colCurLine)
 	fill(gtx, r.Inset(1), colStatus)
@@ -48,7 +47,7 @@ func (e *Editor) drawFinder(gtx layout.Context, width, bottom int) {
 		}
 	}
 	open := e.openPaths()
-	first := max(0, f.sel-rows+1) // scroll so the selected row is shown
+	first := max(0, f.sel-rows+1)
 	for i, r := range f.results[first : first+rows] {
 		y := bottom - (i+1)*lh - gtx.Dp(4)
 		if first+i == f.sel {
@@ -66,7 +65,6 @@ func (e *Editor) drawFinder(gtx layout.Context, width, bottom int) {
 			}
 			return colText
 		})
-		// A dot after files that are open; brighter when unsaved.
 		if dirty, ok := open[r.path]; ok {
 			c := colInfo
 			if dirty {
@@ -77,8 +75,6 @@ func (e *Editor) drawFinder(gtx layout.Context, width, bottom int) {
 	}
 }
 
-// openPaths maps each open file, relative to the finder's root, to whether
-// it has unsaved changes.
 func (e *Editor) openPaths() map[string]bool {
 	m := map[string]bool{}
 	for _, d := range e.docs {
@@ -89,7 +85,6 @@ func (e *Editor) openPaths() map[string]bool {
 	return m
 }
 
-// drawHint shows the main keys in an empty scratch buffer, under line 1.
 func (e *Editor) drawHint(gtx layout.Context, xOf func(int) int, sy int) {
 	hints := [][2]string{
 		{shortcutName + "O", "open a file or folder"},
@@ -108,7 +103,6 @@ func (e *Editor) drawHint(gtx layout.Context, xOf func(int) int, sy int) {
 	}
 }
 
-// keyRows is the key reference, with ⌘ and ⇧ spelled for the platform.
 func keyRows() [][2]string {
 	rows := [][2]string{
 		{"⌘S / ⌘⇧S", "save / save as"},
@@ -142,7 +136,6 @@ func keyRows() [][2]string {
 	return rows
 }
 
-// drawKeys shows the key reference in a box in the middle of the text.
 func (e *Editor) drawKeys(gtx layout.Context, width, bottom int) {
 	rows := keyRows()
 	lh := e.lineH
@@ -169,7 +162,7 @@ func (e *Editor) drawKeys(gtx layout.Context, width, bottom int) {
 	y += lh + gtx.Dp(4)
 	for i, row := range rows[:n] {
 		if i == n-1 && n < len(rows) {
-			e.label(gtx, x, y, "…", colInfo) // a small window cuts the list short
+			e.label(gtx, x, y, "…", colInfo)
 			break
 		}
 		e.label(gtx, x, y, row[0], colText)
@@ -178,8 +171,6 @@ func (e *Editor) drawKeys(gtx layout.Context, width, bottom int) {
 	}
 }
 
-// drawRuns draws s one rune per column, colored by byte offset, with one
-// label per run of the same color.
 func (e *Editor) drawRuns(gtx layout.Context, x, y int, s string, colorAt func(int) color.NRGBA) {
 	col, start, startCol := 0, 0, 0
 	var cur color.NRGBA
@@ -197,8 +188,6 @@ func (e *Editor) drawRuns(gtx layout.Context, x, y int, s string, colorAt func(i
 	}
 }
 
-// drawInfo shows the properties of the file, or of the listing entry under
-// the cursor, in a box at the bottom right.
 func (e *Editor) drawInfo(gtx layout.Context, width, bottom int) {
 	var title string
 	var props []prop
@@ -255,11 +244,8 @@ func (e *Editor) drawInfo(gtx layout.Context, width, bottom int) {
 	}
 }
 
-// grepRows is how many search hits the panel shows at once.
 func (e *Editor) grepRows() int { return max(1, e.viewH*6/10/max(1, e.lineH)) }
 
-// drawGrep lists the folder search hits above the prompt, in file and line
-// order, keeping the selected one in view.
 func (e *Editor) drawGrep(gtx layout.Context, width, bottom int) {
 	g := &e.grep
 	lh := e.lineH
@@ -284,7 +270,6 @@ func (e *Editor) drawGrep(gtx layout.Context, width, bottom int) {
 	}
 	g.top = max(0, min(g.top, len(g.hits)-rows))
 	cols := int(float32(width-2*pad) / e.charW)
-	// The file and line take up to a third of the width, aligned.
 	pw := 0
 	for _, h := range g.hits[g.top : g.top+rows] {
 		pw = max(pw, utf8.RuneCountInString(h.path)+1+len(strconv.Itoa(h.line+1)))
@@ -304,7 +289,6 @@ func (e *Editor) drawGrep(gtx layout.Context, width, bottom int) {
 		lead := min(col, len(text)-len(strings.TrimLeft(text, " \t")))
 		text, col = text[lead:], col-lead
 		if col+q > room-1 && col > 10 {
-			// Bring the match into view.
 			s := col - 10
 			for s < col && !utf8.RuneStart(text[s]) {
 				s++

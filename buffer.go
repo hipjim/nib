@@ -139,7 +139,6 @@ func (b *Buffer) Dirty() bool       { return b.state() != b.saved }
 func (b *Buffer) LineCount() int    { return b.lines.count }
 func (b *Buffer) Line(i int) string { return b.lines.line(i) }
 
-// VisCol returns the visual column of byte col in line i.
 func (b *Buffer) VisCol(i, col int) int {
 	s := b.Line(i)
 	if len(s) < longLine {
@@ -148,7 +147,6 @@ func (b *Buffer) VisCol(i, col int) int {
 	return markAt(s, b.cols.near(i, s, col, 0), col).v
 }
 
-// ColAt returns the byte column in line i nearest to visual position x.
 func (b *Buffer) ColAt(i int, x float32) int {
 	s := b.Line(i)
 	if len(s) < longLine {
@@ -157,7 +155,6 @@ func (b *Buffer) ColAt(i int, x float32) int {
 	return colAtFrom(s, b.cols.near(i, s, -1, x), x)
 }
 
-// Visible returns line i between visual columns v0 and v1, tabs expanded.
 func (b *Buffer) Visible(i, v0, v1 int) string {
 	s := b.Line(i)
 	if len(s) < longLine {
@@ -171,7 +168,6 @@ func (b *Buffer) End() Pos {
 	return Pos{n, len(b.Line(n))}
 }
 
-// Clamp returns the nearest valid position to p.
 func (b *Buffer) Clamp(p Pos) Pos {
 	if p.Line < 0 {
 		return Pos{}

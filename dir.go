@@ -152,7 +152,6 @@ func (l *lang) scanDir(line string, st int, out []span) ([]span, int) {
 	case 1:
 		return append(out, span{0, len(line), tokComment}), 2
 	}
-	// Byte offset of the end of the name column.
 	end, n := 0, 0
 	for end < len(line) && n < l.dirCols {
 		_, w := utf8.DecodeRuneInString(line[end:])

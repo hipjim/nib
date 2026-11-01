@@ -39,7 +39,6 @@ func TestGif(t *testing.T) {
 	}
 	defer win.Release()
 
-	// A tidy folder to film in, so paths read ~/nib-demo/nib/editor.go.
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +93,6 @@ func TestGif(t *testing.T) {
 	rec := &recorder{}
 	rnd := rand.New(rand.NewPCG(7, 11))
 
-	// shot draws the editor as it is now, at the current clock.
 	shot := func() {
 		ops.Reset()
 		gtx.Now = clock
@@ -114,7 +112,6 @@ func TestGif(t *testing.T) {
 		}
 		rec.shots++
 	}
-	// wait lets d pass, redrawing whenever the caret blinks.
 	wait := func(d time.Duration) {
 		end := clock.Add(d)
 		for {
@@ -128,23 +125,19 @@ func TestGif(t *testing.T) {
 		}
 		clock = end
 	}
-	// act does something the user did with a key and shows the result.
 	act := func(f func()) {
-		e.msg = "" // a key press clears the last message
+		e.msg = ""
 		f()
 		e.blinkStart = clock
 		shot()
 	}
-	// typing enters s into the prompt a character at a time.
 	typing := func(s string) {
 		for _, r := range s {
 			act(func() { e.setInput(e.input + string(r)) })
 			wait(time.Duration(90+rnd.IntN(60)) * time.Millisecond)
 		}
 	}
-	// mark notes where a scene starts in the frame dump.
 	mark := func(s string) { t.Logf("%s at shot %d", s, rec.shots) }
-	// settle waits, in real time, for background work and shows the result.
 	settle := func(running func() bool) {
 		for running() {
 			time.Sleep(time.Millisecond)
@@ -152,11 +145,9 @@ func TestGif(t *testing.T) {
 		shot()
 	}
 
-	// 1. Code.
 	shot()
 	wait(1400 * time.Millisecond)
 
-	// 2. The file finder.
 	act(e.openFinder)
 	settle(func() bool { _, walking := e.finder.poll(); e.finder.rank(); return walking })
 	wait(700 * time.Millisecond)
@@ -165,7 +156,6 @@ func TestGif(t *testing.T) {
 	act(e.submitPrompt)
 	wait(1200 * time.Millisecond)
 
-	// 3. Find, with the count of matches.
 	act(func() { e.openPrompt(promptFind, "") })
 	wait(300 * time.Millisecond)
 	typing("comment")
@@ -178,7 +168,6 @@ func TestGif(t *testing.T) {
 	act(func() { e.prompt = promptNone; e.anchor = e.cursor })
 	wait(600 * time.Millisecond)
 
-	// 4. Search the folder.
 	act(e.openGrep)
 	wait(300 * time.Millisecond)
 	typing("parallelFor")
@@ -187,7 +176,6 @@ func TestGif(t *testing.T) {
 	act(e.submitPrompt)
 	wait(1300 * time.Millisecond)
 
-	// 5. A 1 GB log: open, jump to the end, count, replace all.
 	mark("open the log")
 	act(func() { e.open(logPath) })
 	for e.buf.Loading() {
@@ -222,7 +210,6 @@ func TestGif(t *testing.T) {
 	act(e.replaceAll)
 	wait(2000 * time.Millisecond)
 
-	// 6. Back to the code through the switcher, so the loop closes.
 	mark("switcher")
 	act(e.openFinder)
 	wait(1200 * time.Millisecond)
@@ -251,7 +238,6 @@ func TestGif(t *testing.T) {
 	t.Logf("%d frames, %.1f s, %.1f MB, %.1f full frames of pixels", len(rec.frames), rec.seconds(), float64(fi.Size())/1e6, float64(area)/float64(w*h))
 }
 
-// genLog writes a plausible server log of about size bytes.
 func genLog(path string, size int64) error {
 	f, err := os.Create(path)
 	if err != nil {
@@ -312,7 +298,7 @@ func (rc *recorder) add(img *image.RGBA, at time.Time) {
 	if rc.prev != nil {
 		r = diffRect(rc.prev, img)
 		if r.Empty() {
-			return // nothing changed; the previous frame just shows longer
+			return
 		}
 	}
 	fr := rawFrame{r: r, pix: make([]uint32, 0, r.Dx()*r.Dy()), at: at}
@@ -337,7 +323,6 @@ func (rc *recorder) seconds() float64 {
 	return rc.last.Sub(rc.frames[0].at).Seconds()
 }
 
-// diffRect is the smallest rectangle holding every pixel that differs.
 func diffRect(a, b *image.RGBA) image.Rectangle {
 	w, h := a.Rect.Dx(), a.Rect.Dy()
 	r := image.Rectangle{Min: image.Pt(w, h)} // image.Rect would flip it
@@ -382,7 +367,6 @@ func medianCut(hist map[uint32]int) color.Palette {
 	sort.Slice(all, func(i, j int) bool { return all[i].c < all[j].c })
 	boxes := [][]cc{all}
 	for len(boxes) < 256 {
-		// Split the box with the widest spread in some channel, at its median.
 		bi, bch, best := -1, 0, 0
 		for i, b := range boxes {
 			if len(b) < 2 {

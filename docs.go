@@ -31,14 +31,10 @@ type doc struct {
 	loadAt   time.Time // when a file still being indexed was opened
 }
 
-// openedMsg says how many lines a file has and, unless it was instant,
-// how long it took to open.
 func openedMsg(lines int, d time.Duration) string {
 	return "opened " + groupDigits(int64(lines)) + " lines" + tookText(d)
 }
 
-// tookText is " in 42 ms" or " in 1.3 s", or nothing when d is too short
-// to matter.
 func tookText(d time.Duration) string {
 	switch {
 	case d < 10*time.Millisecond:
@@ -53,7 +49,6 @@ func newDoc(path string, b *Buffer) *doc {
 	return &doc{buf: b, path: path, hl: newHighlighter(path), goal: -1}
 }
 
-// show makes d the current document.
 func (e *Editor) show(d *doc) {
 	// An untouched scratch buffer goes away once something else opens.
 	if c := e.doc; c != nil && c != d && c.path == "" && !c.buf.Dirty() && c.buf.LineCount() == 1 && c.buf.Line(0) == "" {
@@ -107,8 +102,7 @@ func (e *Editor) open(path string) {
 	e.show(d)
 }
 
-// openDir shows the listing of a folder with the cursor on the entry named
-// focus, or the first one. There is one listing; it moves between folders.
+// There is one listing; it moves between folders.
 func (e *Editor) openDir(path, focus string) {
 	var d *doc
 	for _, x := range e.docs {
@@ -124,7 +118,6 @@ func (e *Editor) openDir(path, focus string) {
 	}
 }
 
-// fillDir puts the listing of path into d.
 func (e *Editor) fillDir(d *doc, path, focus string) bool {
 	b, v, l, err := listDir(path)
 	if err != nil {
@@ -147,7 +140,6 @@ func (e *Editor) fillDir(d *doc, path, focus string) bool {
 	return true
 }
 
-// entry returns the listing entry on line, if any.
 func (e *Editor) entry(line int) (dirEntry, bool) { return e.entryOf(e.doc, line) }
 
 func (e *Editor) entryOf(d *doc, line int) (dirEntry, bool) {
@@ -158,7 +150,6 @@ func (e *Editor) entryOf(d *doc, line int) (dirEntry, bool) {
 	return d.dir.entries[i], true
 }
 
-// activate opens the listing entry on line.
 func (e *Editor) activate(line int) {
 	en, ok := e.entry(line)
 	switch {
@@ -176,8 +167,6 @@ func (e *Editor) activate(line int) {
 // over, as in Finder.
 const typePause = time.Second
 
-// typeTo adds s to what was typed in the listing and jumps to the entry
-// it names.
 func (e *Editor) typeTo(now time.Time, s string) {
 	if now.Sub(e.typedAt) > typePause {
 		e.typed = ""
@@ -187,8 +176,6 @@ func (e *Editor) typeTo(now time.Time, s string) {
 	e.jumpTyped()
 }
 
-// untype takes back the last letter typed in the listing. It reports false
-// if nothing was being typed.
 func (e *Editor) untype(now time.Time) bool {
 	if e.typed == "" || now.Sub(e.typedAt) > typePause {
 		e.typed = ""
@@ -246,7 +233,6 @@ func (e *Editor) up() {
 	}
 }
 
-// closeDoc closes the current document and shows the previous one.
 func (e *Editor) closeDoc(discardOK bool) {
 	if e.buf.Dirty() && !discardOK {
 		e.flash("unsaved changes · press again to close", true)
@@ -262,7 +248,6 @@ func (e *Editor) closeDoc(discardOK bool) {
 	e.followCursor = true
 }
 
-// openFinder shows the file finder for the root folder.
 func (e *Editor) openFinder() {
 	f := &e.finder
 	f.start(e.root)
@@ -277,7 +262,6 @@ func (e *Editor) openFinder() {
 	e.openPrompt(promptFiles, "")
 }
 
-// otherUnsaved counts background documents with unsaved changes.
 func (e *Editor) otherUnsaved() int {
 	n := 0
 	for _, d := range e.docs[1:] {

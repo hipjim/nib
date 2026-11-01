@@ -64,9 +64,12 @@ func finderPath(root, path string) string {
 
 // fullPath undoes finderPath.
 func fullPath(root, p string) string {
-	p = filepath.FromSlash(p)
-	if p == "~" || strings.HasPrefix(p, "~"+string(filepath.Separator)) || filepath.IsAbs(p) {
+	if p == "~" || strings.HasPrefix(p, "~/") {
 		return expandHome(p)
+	}
+	p = filepath.FromSlash(p)
+	if filepath.IsAbs(p) {
+		return p
 	}
 	return filepath.Join(root, p)
 }
@@ -188,7 +191,6 @@ func (f *finder) rank() {
 		isRecent[p] = len(f.recent) - i
 	}
 	if f.query == "" {
-		// No query lists the open files, all of them, as a switcher.
 		for _, p := range f.recent {
 			f.results = append(f.results, result{p, 0})
 		}

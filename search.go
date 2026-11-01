@@ -90,7 +90,7 @@ func (s *lineStore) countMatches(index func(string) int, qlen int, at Pos, budge
 	workers := min(runtime.NumCPU(), n)
 	ok := parallelFor(workers, 1, func(_, _, w int) {
 		for i := w; i < n; i += workers {
-			if time.Since(start) > budget {
+			if time.Since(start) >= budget {
 				return
 			}
 			r := lineRange{i * searchChunk, min(s.count, (i+1)*searchChunk)}

@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// A place is where a document was left.
 type place struct {
 	Path   string  `json:"path"`
 	Line   int     `json:"line"`
@@ -100,7 +99,6 @@ func (e *Editor) keepSession() {
 	}
 }
 
-// restoreSession reopens the documents of the last session.
 func (e *Editor) restoreSession() {
 	s, ok := readSession(e.sessionPath)
 	if !ok {
@@ -126,7 +124,6 @@ func (e *Editor) restoreSession() {
 	e.msg = ""
 }
 
-// applyPending puts the cursor back once the document has loaded.
 func (e *Editor) applyPending() {
 	p := e.pending
 	if p == nil || e.buf.Loading() {

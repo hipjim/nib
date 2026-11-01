@@ -209,7 +209,6 @@ func init() {
 	reg(&lang{log: true}, ".log", ".out", ".err")
 }
 
-// langFor picks a language from the file name.
 func langFor(path string) *lang {
 	base := strings.ToLower(filepath.Base(path))
 	if l := langs[filepath.Ext(base)]; l != nil {

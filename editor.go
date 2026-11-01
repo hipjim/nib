@@ -72,23 +72,21 @@ const (
 	promptOpen
 	promptSaveAs
 	promptFiles
-	promptReplace // what to replace
-	promptWith    // what to replace it with
-	promptGrep    // search the folder
+	promptReplace
+	promptWith
+	promptGrep
 )
 
 var promptLabels = [...]string{"", "find", "goto line", "open", "save as", "file", "replace", "with", "search folder"}
 
 const blinkPeriod = 530 * time.Millisecond
 
-// shortcutName is how key.ModShortcut is written in messages.
 var shortcutName = map[bool]string{true: "⌘", false: "Ctrl+"}[runtime.GOOS == "darwin"]
 
-// shiftName is how key.ModShift is written after shortcutName.
 var shiftName = map[bool]string{true: "⇧", false: "Shift+"}[runtime.GOOS == "darwin"]
 
 type Editor struct {
-	*doc          // the current document
+	*doc
 	docs   []*doc // open documents, most recent first
 	root   string // folder the file finder searches
 	finder finder
@@ -141,7 +139,7 @@ type Editor struct {
 	findOrigin Pos
 	findQuery  string
 	notFound   bool
-	replaceBy  string // the last replacement
+	replaceBy  string
 
 	msg        string
 	msgWarn    bool
@@ -198,7 +196,6 @@ func expandHome(p string) string {
 
 func (e *Editor) flash(s string, warn bool) { e.msg, e.msgWarn = s, warn }
 
-// locked reports whether edits must wait for the file to finish loading.
 func (e *Editor) locked() bool {
 	if e.dir != nil {
 		e.flash("folder listings are read-only", true)
@@ -265,7 +262,6 @@ func (e *Editor) wordRight(p Pos) Pos {
 	return Pos{p.Line, wordEnd(line, p.Col)}
 }
 
-// vertical moves the cursor by n lines, keeping the goal column.
 func (e *Editor) vertical(n int, extend bool) {
 	if e.goal < 0 {
 		e.goal = e.buf.VisCol(e.cursor.Line, e.cursor.Col)
@@ -335,7 +331,6 @@ func (e *Editor) backspace(mods key.Modifiers) {
 	case mods.Contain(key.ModShortcutAlt):
 		e.deleteTo(e.wordLeft(c))
 	case !e.buf.UseTabs && c.Col > 0 && strings.TrimLeft(line[:c.Col], " ") == "":
-		// Soft tab: delete back to the previous tab stop.
 		e.deleteTo(Pos{c.Line, (c.Col - 1) / tabWidth * tabWidth})
 	default:
 		e.deleteTo(e.left(c))
@@ -366,7 +361,6 @@ func (e *Editor) newline() {
 	e.insert("\n" + indent)
 }
 
-// lineSpan returns the first and last line touched by the selection.
 func (e *Editor) lineSpan() (int, int) {
 	a, b, ok := e.sel()
 	if ok && b.Col == 0 && b.Line > a.Line {
@@ -375,7 +369,6 @@ func (e *Editor) lineSpan() (int, int) {
 	return a.Line, b.Line
 }
 
-// replaceLines swaps lines [first, last] for repl as a single undo step.
 func (e *Editor) replaceLines(first, last int, repl []string) {
 	start, end := Pos{first, 0}, Pos{last, len(e.buf.Line(last))}
 	e.buf.Replace(start, end, strings.Join(repl, "\n"), e.cursor)
@@ -446,7 +439,6 @@ func (e *Editor) duplicateLines() {
 	e.followCursor = true
 }
 
-// moveLines moves the selected lines up (dir<0) or down (dir>0).
 func (e *Editor) moveLines(dir int) {
 	if e.locked() {
 		return
@@ -635,7 +627,6 @@ func (e *Editor) submitPrompt() {
 	}
 }
 
-// openReplace asks what to replace, starting from the selection.
 func (e *Editor) openReplace() {
 	q := e.findQuery
 	if a, b, ok := e.sel(); ok && a.Line == b.Line {
@@ -648,7 +639,6 @@ func (e *Editor) openReplace() {
 	}
 }
 
-// isMatch reports whether [a, b) is a match of the find query.
 func (e *Editor) isMatch(a, b Pos) bool {
 	q := e.findQuery
 	if q == "" || a.Line != b.Line {
@@ -658,7 +648,6 @@ func (e *Editor) isMatch(a, b Pos) bool {
 	return len(t) == len(q) && matcher(q)(t) == 0
 }
 
-// replaceNext replaces the selected match and selects the next one.
 func (e *Editor) replaceNext() {
 	if e.locked() {
 		return
@@ -669,7 +658,6 @@ func (e *Editor) replaceNext() {
 	e.find(e.cursor, false)
 }
 
-// replaceAll replaces every match in the file.
 func (e *Editor) replaceAll() {
 	if e.locked() {
 		return
@@ -692,8 +680,7 @@ func (e *Editor) replaceAll() {
 	}
 }
 
-// openGrep asks what to search the folder for. The last search stays
-// listed if the query is the same.
+// The last search stays listed if the query is the same.
 func (e *Editor) openGrep() {
 	q := e.grep.query
 	if a, b, ok := e.sel(); ok && a.Line == b.Line {
@@ -718,7 +705,6 @@ func (e *Editor) openHit(root, q string, h hit) {
 	e.applyPending()
 }
 
-// dirPrefix is a folder path for the open prompt, ending in a separator.
 func dirPrefix(wd string) string {
 	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(wd, home) {
 		wd = "~" + wd[len(home):]
@@ -1221,7 +1207,6 @@ func orDefault(a, b string) string {
 	return b
 }
 
-// completePath extends a path to the longest unambiguous match.
 func completePath(in string) string {
 	full := expandHome(in)
 	dir, base := filepath.Split(full)
@@ -1354,7 +1339,6 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	// relative to the top of the text.
 	defer op.Offset(image.Pt(0, tabH)).Push(gtx.Ops).Pop()
 
-	// Text area with input handling.
 	area := clip.Rect(image.Rect(0, 0, size.X, textH)).Push(gtx.Ops)
 	event.Op(gtx.Ops, e)
 	pointer.CursorText.Add(gtx.Ops)
@@ -1416,7 +1400,6 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 	last := min(e.buf.LineCount()-1, (sy+height)/lh)
 	selA, selB, hasSel := e.sel()
 
-	// Current line highlight.
 	if !hasSel {
 		y := e.cursor.Line*lh - sy
 		fill(gtx, image.Rect(0, y, width, y+lh), colCurLine)
@@ -1424,7 +1407,6 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 
 	xOf := func(v int) int { return e.textX + int(math.Round(float64(float32(v)*e.charW-e.scrollX))) }
 
-	// Gutter: line numbers.
 	for i := first; i <= last; i++ {
 		y := i*lh - sy
 		n := strconv.Itoa(i + 1)
@@ -1515,7 +1497,6 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 		e.drawHint(gtx, xOf, sy)
 	}
 
-	// Cursor.
 	if e.focused && e.prompt == promptNone {
 		since := gtx.Now.Sub(e.blinkStart)
 		if since < 10*time.Second {
@@ -1581,7 +1562,6 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	pad := gtx.Dp(12)
 	cw := e.charW
 
-	// Right side: position info.
 	ind := fmt.Sprintf("spaces:%d", tabWidth)
 	if e.buf.UseTabs {
 		ind = "tabs"

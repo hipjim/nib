@@ -63,7 +63,6 @@ func TestRender(t *testing.T) {
 		t.Logf("layout: %v", time.Since(start))
 	}
 	if tabs := os.Getenv("NIB_TABS"); tabs != "" {
-		// Open more files, the last one edited, and come back to the first.
 		first := e.doc
 		for _, p := range strings.Split(tabs, ",") {
 			e.open(p)

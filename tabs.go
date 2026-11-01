@@ -21,7 +21,6 @@ import (
 // tabMinChars is how narrow a tab gets before the bar scrolls instead.
 const tabMinChars = 8
 
-// tabs returns the open documents in opening order.
 func (e *Editor) tabs() []*doc {
 	t := slices.Clone(e.docs)
 	slices.SortFunc(t, func(a, b *doc) int { return a.opened - b.opened })
@@ -55,7 +54,6 @@ func tabBase(d *doc) string {
 	return filepath.Base(d.path)
 }
 
-// tabHeight is the bar's height, zero when it is not shown.
 func (e *Editor) tabHeight(gtx layout.Context) int {
 	if len(e.docs) < 2 {
 		return 0
@@ -72,7 +70,7 @@ func (e *Editor) tabLayout(tabs []*doc, names []string, width, pad int) (x0, w [
 	for i, d := range tabs {
 		n := utf8.RuneCountInString(names[i])
 		if d.buf.Dirty() {
-			n += 2 // the dot
+			n += 2
 		}
 		w[i] = int(float32(n)*e.charW) + 2*pad
 		total += w[i]
@@ -100,7 +98,6 @@ func (e *Editor) tabLayout(tabs []*doc, names []string, width, pad int) (x0, w [
 	return x0, w, scroll
 }
 
-// drawTabs draws the bar in a rectangle of height h at the top.
 func (e *Editor) drawTabs(gtx layout.Context, width, h int) {
 	tabs := e.tabs()
 	names := tabNames(tabs)
@@ -145,7 +142,6 @@ func (e *Editor) drawTabs(gtx layout.Context, width, h int) {
 	}
 }
 
-// tabEvents handles clicks and scrolling on the tabs.
 func (e *Editor) tabEvents(gtx layout.Context) {
 	// Clicks change e.docs, so walk a copy.
 	for _, d := range e.tabs() {
@@ -185,14 +181,12 @@ func (e *Editor) tabEvents(gtx layout.Context) {
 	}
 }
 
-// showTab shows the nth tab, counting from 0, if there is one.
 func (e *Editor) showTab(n int) {
 	if tabs := e.tabs(); n >= 0 && n < len(tabs) {
 		e.show(tabs[n])
 	}
 }
 
-// cycleTab shows the next tab, or the previous one, wrapping around.
 func (e *Editor) cycleTab(back bool) {
 	tabs := e.tabs()
 	i := slices.Index(tabs, e.doc)
@@ -228,7 +222,6 @@ func (e *Editor) closeTab(d *doc) {
 	}
 }
 
-// closeOthers closes every other document without unsaved changes.
 func (e *Editor) closeOthers() {
 	n := len(e.docs)
 	e.docs = slices.DeleteFunc(e.docs, func(x *doc) bool { return x != e.doc && !x.buf.Dirty() })

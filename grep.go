@@ -23,7 +23,6 @@ const (
 	grepBuf     = 1 << 20
 )
 
-// A hit is a line with a match.
 type hit struct {
 	path string // slash-separated, relative to root
 	line int
@@ -278,8 +277,6 @@ func scanChunk(s, rel string, index func(string) int, qlen int, byLine bool, lin
 	return hits
 }
 
-// newHit copies the line, or the part of a long one around the match, out
-// of the read buffer.
 func newHit(rel string, line int, text string, col, qlen int) hit {
 	text = strings.TrimSuffix(text, "\r")
 	start, end := 0, len(text)
