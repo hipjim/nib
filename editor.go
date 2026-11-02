@@ -723,7 +723,7 @@ var navKeys = []key.Name{
 	key.NameTab, key.NameEscape, key.NameF1, key.NameF3,
 }
 
-var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0", "/", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+var shortcutKeys = []key.Name{"A", "C", "X", "V", "Z", "Y", "S", "O", "F", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0", "/", "?", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
 
 func (e *Editor) filters() []event.Filter {
 	fs := []event.Filter{
@@ -942,8 +942,12 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 			e.up()
 		case "I":
 			e.info = !e.info
-		case "/":
-			e.keys = !e.keys
+		case "/", "?":
+			if shift || k.Name == "?" {
+				e.keys = !e.keys
+			} else {
+				e.toggleComment()
+			}
 		case "W":
 			if shift {
 				e.closeOthers()
@@ -1186,7 +1190,7 @@ func (e *Editor) promptKey(k key.Event) bool {
 		}
 		e.prompt = promptNone
 		return false
-	case "A", "C", "X", "Z", "Y", "S", "O", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0", "/",
+	case "A", "C", "X", "Z", "Y", "S", "O", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0", "/", "?",
 		"1", "2", "3", "4", "5", "6", "7", "8", "9", key.NameF1:
 		// Any other shortcut closes the prompt and runs normally.
 		e.prompt = promptNone

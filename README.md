@@ -73,7 +73,7 @@ selections with the mouse and keyboard, word moves, auto-indent, indenting and
 dedenting blocks, moving and duplicating lines, copying the whole line when
 nothing is selected, and `⌘D` to select the next occurrence of a word. The
 bracket at the cursor and its partner are outlined. Tabs or spaces and LF or
-CRLF line endings are detected and kept. `⌘/` lists every key.
+CRLF line endings are detected and kept. `⌘⇧/` lists every key.
 
 ### Open files
 
@@ -173,7 +173,8 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 | `Tab` / `⇧Tab` | indent / dedent (works on selections) |
 | `⌘=` / `⌘-` / `⌘0` | zoom in / out / reset |
 | `⌘⇧H` | syntax highlighting on / off |
-| `⌘/` or `F1` | show this list in the editor |
+| `⌘/` | comment the lines out, or back in |
+| `⌘⇧/` or `F1` | show this list in the editor |
 | `Esc` | clear the selection, close a prompt or panel |
 
 Double-click selects a word, triple-click a line. Drag the scrollbar, or click

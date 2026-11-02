@@ -90,7 +90,7 @@ func (e *Editor) drawHint(gtx layout.Context, xOf func(int) int, sy int) {
 		{shortcutName + "O", "browse the folder"},
 		{shortcutName + "P", "find a file in the folder"},
 		{shortcutName + shiftName + "F", "search the folder"},
-		{shortcutName + "/", "all the keys"},
+		{shortcutName + shiftName + "/", "all the keys"},
 	}
 	w := 0
 	for _, h := range hints {
@@ -128,7 +128,8 @@ func keyRows() [][2]string {
 		{"Tab / ⇧Tab", "indent / dedent"},
 		{"⌘= / ⌘- / ⌘0", "zoom in / out / reset"},
 		{"⌘⇧H", "syntax highlighting on / off"},
-		{"⌘/ or F1", "this list"},
+		{"⌘/", "comment the lines out, or back in"},
+		{"⌘⇧/ or F1", "this list"},
 	}
 	for i := range rows {
 		rows[i][0] = strings.NewReplacer("⌘", shortcutName, "⇧", shiftName).Replace(rows[i][0])
