@@ -71,8 +71,10 @@ nib             # pick up where you left off
 Everything you would expect, and fast in files of any size: undo and redo,
 selections with the mouse and keyboard, word moves, auto-indent, indenting and
 dedenting blocks, moving and duplicating lines, copying the whole line when
-nothing is selected, and `⌘D` to select the next occurrence of a word. The
-bracket at the cursor and its partner are outlined. Tabs or spaces and LF or
+nothing is selected, `⌘/` to comment lines out, and `⌘D` to select the next
+occurrence of a word. Brackets and quotes close themselves as you type them,
+wrap the selection, and are skipped over when typed again. The bracket at the
+cursor and its partner are outlined. Tabs or spaces and LF or
 CRLF line endings are detected and kept. `⌘⇧/` lists every key.
 
 ### Open files

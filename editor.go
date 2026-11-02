@@ -301,6 +301,9 @@ func (e *Editor) backspace(mods key.Modifiers) {
 	case !e.buf.UseTabs && c.Col > 0 && strings.TrimLeft(line[:c.Col], " ") == "":
 		e.deleteTo(Pos{c.Line, (c.Col - 1) / tabWidth * tabWidth})
 	default:
+		if _, _, ok := e.sel(); !ok && e.dir == nil && !e.buf.Loading() && e.deletePair() {
+			return
+		}
 		e.deleteTo(e.left(c))
 	}
 }
@@ -747,7 +750,7 @@ func (e *Editor) events(gtx layout.Context) {
 			} else if e.dir != nil {
 				e.typeTo(gtx.Now, ev.Text)
 			} else {
-				e.insert(ev.Text)
+				e.typeText(ev.Text)
 			}
 		case transfer.DataEvent:
 			if data, err := io.ReadAll(ev.Open()); err == nil {
