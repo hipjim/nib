@@ -39,7 +39,18 @@ one ~10 MB binary for macOS, Linux and Windows.
 
 ## Install
 
-Download the latest build from the
+On macOS, with [Homebrew](https://brew.sh):
+
+```sh
+brew tap hipjim/nib https://github.com/hipjim/nib
+brew install --cask --no-quarantine nib
+```
+
+Homebrew asks once whether to trust the tap. That puts `nib.app` in
+Applications and `nib` on your `PATH`. The app is not notarized yet, which is
+what `--no-quarantine` is for. `brew upgrade nib` picks up new releases.
+
+Or download the latest build from the
 [releases page](https://github.com/hipjim/nib/releases/latest):
 
 | Platform | Download | Notes |

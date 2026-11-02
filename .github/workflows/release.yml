@@ -88,6 +88,9 @@ jobs:
     needs: [macos, linux, windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -107,3 +110,11 @@ jobs:
           NOTES
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "nib $GITHUB_REF_NAME" \
             --notes-file notes.md --generate-notes nib-* checksums.txt
+      - name: Point the Homebrew cask at the release
+        run: |
+          sha=$(grep macos-universal.zip dist/checksums.txt | cut -d' ' -f1)
+          sed -i -e "s/^  version \".*\"/  version \"${GITHUB_REF_NAME#v}\"/" \
+                 -e "s/^  sha256 \".*\"/  sha256 \"$sha\"/" Casks/nib.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Point the Homebrew cask at $GITHUB_REF_NAME" && git push origin HEAD:main
