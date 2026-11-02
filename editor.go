@@ -30,39 +30,6 @@ import (
 	"gioui.org/widget"
 )
 
-var (
-	colBg       = rgb(0x0b0d10)
-	colCurLine  = rgb(0x12161c)
-	colText     = rgb(0xc8d0da)
-	colDim      = rgb(0x3a4250) // line numbers, scrollbar: meant to recede
-	colInfo     = rgb(0x5f6b7c) // status details, comments: meant to be read
-	colGutterHi = rgb(0x8b95a5)
-	colAccent   = rgb(0x3ee6a8)
-	colSel      = rgb(0x17463a)
-	colMatch    = rgb(0x4a3f1c)
-	colStatus   = rgb(0x07080a)
-	colWarn     = rgb(0xff6b6b)
-)
-
-// Syntax colors, indexed by token class.
-var tokColors = [...]color.NRGBA{
-	tokPlain:   colText,
-	tokComment: colInfo,
-	tokString:  rgb(0x7fd4a6),
-	tokNumber:  rgb(0xd9b56c),
-	tokKeyword: rgb(0xf4f7fa),
-	tokTag:     rgb(0x86a6cc),
-	tokTime:    colInfo,
-	tokError:   colWarn,
-	tokWarn:    rgb(0xe8b84e),
-	tokDir:     rgb(0x7cb3e8),
-}
-
-func rgb(c uint32) color.NRGBA { return argb(0xff000000 | c) }
-func argb(c uint32) color.NRGBA {
-	return color.NRGBA{A: uint8(c >> 24), R: uint8(c >> 16), G: uint8(c >> 8), B: uint8(c)}
-}
-
 type promptKind int
 
 const (
@@ -92,6 +59,7 @@ type Editor struct {
 	finder finder
 	grep   grep
 	plain  bool // syntax highlighting turned off
+	light  bool // light theme
 	info   bool // file properties panel shown
 	keys   bool // key reference panel shown
 	count  matchCount
@@ -993,6 +961,11 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 				e.deleteLines()
 			}
 		case "L":
+			if shift {
+				e.setLight(!e.light)
+				e.flash(map[bool]string{false: "dark", true: "light"}[e.light]+" theme", false)
+				break
+			}
 			a, _ := e.lineSpan()
 			if _, _, ok := e.sel(); !ok {
 				e.anchor = Pos{a, 0}

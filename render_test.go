@@ -20,7 +20,7 @@ import (
 // cursor there. NIB_FINDER=query opens the file finder, NIB_INFO=1 the properties,
 // NIB_GREP=query the folder search and NIB_REPLACE=old:new the replace
 // prompt, NIB_KEYS=1 the key reference, NIB_TABS=a,b opens more files and
-// NIB_FILE=- an empty scratch buffer.
+// NIB_FILE=- an empty scratch buffer. NIB_LIGHT=1 uses the light theme.
 func TestRender(t *testing.T) {
 	out := os.Getenv("NIB_SHOT")
 	if out == "" {
@@ -38,6 +38,8 @@ func TestRender(t *testing.T) {
 		e = NewEditor("")
 	}
 	e.focused = true
+	e.setLight(os.Getenv("NIB_LIGHT") != "")
+	defer applyTheme(false)
 	e.cursor = Pos{98, 12}
 	e.anchor = Pos{96, 2}
 	if l, c, _ := strings.Cut(os.Getenv("NIB_LINE"), ":"); l != "" {

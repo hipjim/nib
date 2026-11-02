@@ -9,11 +9,6 @@ import (
 	"gioui.org/op/clip"
 )
 
-var (
-	colThumb      = rgb(0x343c48)
-	colThumbHover = rgb(0x4a5566)
-)
-
 // scrollbar is the thin bar at the right of the text. Clicking the track
 // jumps there, which beats paging when a pixel is thousands of lines.
 type scrollbar struct {

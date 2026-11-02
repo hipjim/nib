@@ -20,8 +20,9 @@ type place struct {
 }
 
 type session struct {
-	Root string  `json:"root"`
-	Docs []place `json:"docs"` // most recent first
+	Root  string  `json:"root"`
+	Light bool    `json:"light,omitempty"`
+	Docs  []place `json:"docs"` // most recent first
 }
 
 // maxSession is how many documents a session remembers, and maxIdle how
@@ -51,7 +52,7 @@ func (e *Editor) saveSession(force bool) bool {
 	if e.sessionPath == "" {
 		return false
 	}
-	s := session{Root: e.root}
+	s := session{Root: e.root, Light: e.light}
 	open := map[string]bool{}
 	for _, d := range e.docs {
 		idle := d.idle + 1
@@ -96,6 +97,7 @@ func readSession(path string) (session, bool) {
 func (e *Editor) keepSession() {
 	if s, ok := readSession(e.sessionPath); ok {
 		e.keep = s.Docs
+		e.setLight(s.Light)
 	}
 }
 
@@ -107,6 +109,7 @@ func (e *Editor) restoreSession() {
 	if fi, err := os.Stat(s.Root); err == nil && fi.IsDir() {
 		e.root = s.Root
 	}
+	e.setLight(s.Light)
 	e.restoring = true
 	defer func() { e.restoring = false }()
 	for _, p := range slices.Backward(s.Docs) {

@@ -128,6 +128,7 @@ func keyRows() [][2]string {
 		{"Tab / ⇧Tab", "indent / dedent"},
 		{"⌘= / ⌘- / ⌘0", "zoom in / out / reset"},
 		{"⌘⇧H", "syntax highlighting on / off"},
+		{"⌘⇧L", "light / dark theme"},
 		{"⌘/", "comment the lines out, or back in"},
 		{"⌘⇧/ or F1", "this list"},
 	}

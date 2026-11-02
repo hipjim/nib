@@ -173,6 +173,7 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 | `Tab` / `⇧Tab` | indent / dedent (works on selections) |
 | `⌘=` / `⌘-` / `⌘0` | zoom in / out / reset |
 | `⌘⇧H` | syntax highlighting on / off |
+| `⌘⇧L` | light / dark theme (remembered) |
 | `⌘/` | comment the lines out, or back in |
 | `⌘⇧/` or `F1` | show this list in the editor |
 | `Esc` | clear the selection, close a prompt or panel |
