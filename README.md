@@ -251,7 +251,7 @@ Every push is tested on macOS, Linux and Windows. Pushing a tag like `v1.2.3`
 builds every platform and publishes a release
 ([`release.yml`](.github/workflows/release.yml)). `scripts/macos-app.sh`
 builds the macOS app locally, and `NIB_ICON=appicon.png go test -run TestIcon .`
-redraws the icon.
+redraws the icon from the pen strokes in `icon_test.go`.
 
 nib is young. Bug reports and ideas are welcome in
 [issues](https://github.com/hipjim/nib/issues).
@@ -259,7 +259,8 @@ nib is young. Bug reports and ideas are welcome in
 ## The name
 
 A *nib* is the tip of a pen: the small part that does the writing. It was
-called quod until version 0.2.
+called quod until version 0.2. The icon is an N written with a broad-edged
+pen in blue-black ink on paper, drawn by the editor's own renderer.
 
 ## License
 
