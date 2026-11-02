@@ -60,6 +60,7 @@ type Editor struct {
 	grep   grep
 	plain  bool // syntax highlighting turned off
 	light  bool // light theme
+	showWS bool // spaces and tabs drawn as · and →
 	info   bool // file properties panel shown
 	keys   bool // key reference panel shown
 	count  matchCount
@@ -912,7 +913,11 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 		case "E":
 			e.up()
 		case "I":
-			e.info = !e.info
+			if shift {
+				e.showWS = !e.showWS
+			} else {
+				e.info = !e.info
+			}
 		case "/", "?":
 			if shift || k.Name == "?" {
 				e.keys = !e.keys
@@ -1472,6 +1477,9 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 			fill(gtx, image.Rect(xOf(c0), y, xOf(c1), y+lh), colSel)
 		}
 
+		if e.showWS && e.dir == nil {
+			e.drawWhitespace(gtx, xOf, y, line, v0, v1)
+		}
 		if lang != nil && len(line) <= maxHighlight {
 			e.hl.spans, st = lang.scan(line, st, e.hl.spans[:0])
 			e.drawSpans(gtx, xOf, y, line, v0, v1, e.hl.spans)

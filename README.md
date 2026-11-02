@@ -74,7 +74,8 @@ dedenting blocks, moving and duplicating lines, copying the whole line when
 nothing is selected, `⌘/` to comment lines out, and `⌘D` to select the next
 occurrence of a word. Brackets and quotes close themselves as you type them,
 wrap the selection, and are skipped over when typed again. The bracket at the
-cursor and its partner are outlined, and indent guides run through blocks. Tabs or spaces and LF or
+cursor and its partner are outlined, indent guides run through blocks, and
+`⌘⇧I` shows every space and tab. Tabs or spaces and LF or
 CRLF line endings are detected and kept. `⌘⇧/` lists every key.
 
 ### Open files
@@ -156,7 +157,7 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 | `⌘P` or `⇧⇧` | find a file in the folder (`↑` / `↓` pick, `Enter` opens) |
 | `⌘O` / `⌘⇧O` | browse the file's folder / open a path (`Tab` completes) |
 | `⌘E` | show the current file's folder |
-| `⌘I` | file properties |
+| `⌘I` / `⌘⇧I` | file properties / show spaces and tabs |
 | `⌘T` | open a terminal in the file's folder |
 | `⌘W` / `⌘⇧W` | close the file / every other saved file |
 | `Ctrl+Tab` / `Ctrl+⇧Tab` | next / previous tab |

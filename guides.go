@@ -1,6 +1,10 @@
 package main
 
-import "strings"
+import (
+	"strings"
+
+	"gioui.org/layout"
+)
 
 // guideLookahead is how far past the screen a blank line looks for the
 // next non-blank one.
@@ -47,4 +51,39 @@ func (e *Editor) guides(first, last int) []int {
 		out[i-first] = max(prev, next)
 	}
 	return out
+}
+
+// drawWhitespace marks the spaces and tabs of line between visual columns
+// v0 and v1 with · and →, one label per run of them.
+func (e *Editor) drawWhitespace(gtx layout.Context, xOf func(int) int, y int, line string, v0, v1 int) {
+	var sb strings.Builder
+	runV, v := 0, 0
+	flush := func() {
+		if sb.Len() > 0 {
+			e.label(gtx, xOf(runV), y, sb.String(), colDim)
+			sb.Reset()
+		}
+	}
+	for _, r := range line {
+		if v >= v1 {
+			break
+		}
+		w := runeWidth(r, v)
+		switch {
+		case r != ' ' && r != '\t':
+			flush()
+		case v+w <= v0:
+		default:
+			if sb.Len() == 0 {
+				runV = v
+			}
+			if r == ' ' {
+				sb.WriteString("·")
+			} else {
+				sb.WriteString("→" + strings.Repeat(" ", w-1))
+			}
+		}
+		v += w
+	}
+	flush()
 }

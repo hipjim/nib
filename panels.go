@@ -110,7 +110,7 @@ func keyRows() [][2]string {
 		{"⌘P or ⇧⇧", "find a file in the folder"},
 		{"⌘⇧F", "search every file in the folder"},
 		{"⌘E", "show the file's folder"},
-		{"⌘I", "file properties"},
+		{"⌘I / ⌘⇧I", "file properties / show spaces and tabs"},
 		{"⌘T", "open a terminal in the file's folder"},
 		{"⌘W / ⌘⇧W", "close the file / all other saved files"},
 		{"Ctrl+Tab / Ctrl+⇧Tab", "next / previous tab"},
