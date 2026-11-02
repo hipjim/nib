@@ -74,7 +74,7 @@ dedenting blocks, moving and duplicating lines, copying the whole line when
 nothing is selected, `⌘/` to comment lines out, and `⌘D` to select the next
 occurrence of a word. Brackets and quotes close themselves as you type them,
 wrap the selection, and are skipped over when typed again. The bracket at the
-cursor and its partner are outlined. Tabs or spaces and LF or
+cursor and its partner are outlined, and indent guides run through blocks. Tabs or spaces and LF or
 CRLF line endings are detected and kept. `⌘⇧/` lists every key.
 
 ### Open files

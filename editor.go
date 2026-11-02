@@ -1430,9 +1430,17 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 		st = e.hl.stateAt(e.buf, first)
 	}
 
+	guides := e.guides(first, last)
 	for i := first; i <= last; i++ {
 		y := i*lh - sy
 		line := e.buf.Line(i)
+
+		for v := 0; v < guides[i-first]; v += tabWidth {
+			if v >= v0 && v <= v1 {
+				x := xOf(v)
+				fill(gtx, image.Rect(x, y, x+1, y+lh), colGuide)
+			}
+		}
 
 		if q != "" {
 			// Only the visible part of a long line is searched.
