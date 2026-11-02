@@ -930,7 +930,12 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 				e.save(e.path)
 			}
 		case "O":
-			e.openPrompt(promptOpen, dirPrefix(e.root))
+			switch {
+			case shift:
+				e.openPrompt(promptOpen, dirPrefix(e.root))
+			case e.dir == nil:
+				e.up()
+			}
 		case "P":
 			e.openFinder()
 		case "E":

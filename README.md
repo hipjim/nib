@@ -108,9 +108,11 @@ A lower-case query ignores case; one with a capital letter matches exactly.
   <img src="docs/finder.png" width="400" alt="the fuzzy file finder">
 </p>
 
-- **Folders** open as a listing with size, modified and created dates. Type a
-  few letters of a name to jump to it, as in Finder. `Enter` opens, `←` or
-  `Backspace` goes up, and `⌘E` jumps from a file to its folder.
+- **Folders** open as a listing with size, modified and created dates. `⌘O`
+  shows the current file's folder with the file selected. Type a few letters
+  of a name to jump to it, as in Finder. `Enter` opens, `←` or `Backspace`
+  goes up, and `⌘E` goes up from a file or a listing. `⌘⇧O` opens a file or
+  folder by typing its path; `Tab` completes it.
 - **`⌘P`**, or tapping Shift twice, finds any file under the folder from a few
   letters of its path, like fzf: `edgo` finds `editor.go`. The folder is the
   one nib was started in or last opened. It skips `.git`, `node_modules` and
@@ -150,7 +152,7 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 | --- | --- |
 | `⌘S` / `⌘⇧S` | save / save as |
 | `⌘P` or `⇧⇧` | find a file in the folder (`↑` / `↓` pick, `Enter` opens) |
-| `⌘O` | open a file or folder by path (`Tab` completes) |
+| `⌘O` / `⌘⇧O` | browse the file's folder / open a path (`Tab` completes) |
 | `⌘E` | show the current file's folder |
 | `⌘I` | file properties |
 | `⌘T` | open a terminal in the file's folder |

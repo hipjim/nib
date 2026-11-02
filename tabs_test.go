@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gioui.org/io/key"
+	"gioui.org/layout"
 )
 
 func testDocs(t *testing.T, names ...string) (*Editor, string) {
@@ -175,5 +178,27 @@ func TestSessionDropsIdleFiles(t *testing.T) {
 	g.restoreSession()
 	if len(g.docs) != 1 || filepath.Base(g.path) != "b.go" {
 		t.Fatalf("after dropping: %d docs, current %q", len(g.docs), g.path)
+	}
+}
+
+func TestOpenKeyBrowsesTheFolder(t *testing.T) {
+	e, dir := testDocs(t, "a.go", "b.go")
+	press := func(mods key.Modifiers) {
+		e.key(layout.Context{}, key.Event{Name: "O", Modifiers: key.ModShortcut | mods}, false)
+	}
+	press(0)
+	if e.dir == nil || e.path != dir || e.prompt != promptNone {
+		t.Fatalf("⌘O from a file: dir %v, path %q, prompt %v", e.dir != nil, e.path, e.prompt)
+	}
+	if line := e.cursor.Line - dirHeader; line < 0 || e.dir.entries[line].name != "b.go" {
+		t.Fatalf("⌘O did not select the file: cursor line %d", e.cursor.Line)
+	}
+	press(0) // in a listing it stays put
+	if e.dir == nil || e.path != dir {
+		t.Fatalf("⌘O in a listing moved to %q", e.path)
+	}
+	press(key.ModShift)
+	if e.prompt != promptOpen || e.input != dirPrefix(dir) {
+		t.Fatalf("⌘⇧O: prompt %v, input %q", e.prompt, e.input)
 	}
 }

@@ -87,7 +87,7 @@ func (e *Editor) openPaths() map[string]bool {
 
 func (e *Editor) drawHint(gtx layout.Context, xOf func(int) int, sy int) {
 	hints := [][2]string{
-		{shortcutName + "O", "open a file or folder"},
+		{shortcutName + "O", "browse the folder"},
 		{shortcutName + "P", "find a file in the folder"},
 		{shortcutName + shiftName + "F", "search the folder"},
 		{shortcutName + "/", "all the keys"},
@@ -106,7 +106,7 @@ func (e *Editor) drawHint(gtx layout.Context, xOf func(int) int, sy int) {
 func keyRows() [][2]string {
 	rows := [][2]string{
 		{"⌘S / ⌘⇧S", "save / save as"},
-		{"⌘O", "open a file or folder by path (Tab completes)"},
+		{"⌘O / ⌘⇧O", "browse the folder / open a path (Tab completes)"},
 		{"⌘P or ⇧⇧", "find a file in the folder"},
 		{"⌘⇧F", "search every file in the folder"},
 		{"⌘E", "show the file's folder"},
