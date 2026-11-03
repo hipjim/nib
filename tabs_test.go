@@ -1,6 +1,7 @@
 package main
 
 import (
+	"image"
 	"os"
 	"path/filepath"
 	"testing"
@@ -89,7 +90,7 @@ func TestTabLayoutShrinksThenScrolls(t *testing.T) {
 	nm := names(e)
 	x0, w, scroll := e.tabLayout(tabs, nm, 10000, 10)
 	for i := range w {
-		if w[i] != len(nm[i])*8+20 || (i > 0 && x0[i] != x0[i-1]+w[i-1]) {
+		if w[i] != (len(nm[i])+2)*8+20 || (i > 0 && x0[i] != x0[i-1]+w[i-1]) {
 			t.Fatalf("natural widths: x0 %v w %v", x0, w)
 		}
 	}
@@ -98,7 +99,7 @@ func TestTabLayoutShrinksThenScrolls(t *testing.T) {
 	}
 	_, w, _ = e.tabLayout(tabs, nm, 100, 10)
 	for _, x := range w {
-		if x != tabMinChars*8+20 {
+		if x != (tabMinChars+2)*8+20 {
 			t.Fatalf("shrunk widths %v", w)
 		}
 	}
@@ -200,5 +201,31 @@ func TestOpenKeyBrowsesTheFolder(t *testing.T) {
 	press(key.ModShift)
 	if e.prompt != promptOpen || e.input != dirPrefix(dir) {
 		t.Fatalf("⌘⇧O: prompt %v, input %q", e.prompt, e.input)
+	}
+}
+
+func TestTabCloseButton(t *testing.T) {
+	e, _ := testDocs(t, "a.go", "b.go", "c.go")
+	tabs := e.tabs()
+	for _, d := range tabs {
+		d.closeR = image.Rect(80, 2, 100, 22)
+	}
+	e.tabPress(tabs[0], image.Pt(20, 10))
+	if e.doc != tabs[0] || len(e.docs) != 3 {
+		t.Fatalf("click on the name: current %q, %d docs", filepath.Base(e.path), len(e.docs))
+	}
+	e.tabHoverClose(tabs[1], true)
+	e.tabPress(tabs[1], image.Pt(90, 10))
+	if len(e.docs) != 2 || e.doc != tabs[0] || e.tabClose != nil {
+		t.Fatalf("click on the ×: %d docs, current %q, hover %v", len(e.docs), filepath.Base(e.path), e.tabClose)
+	}
+	e.tabHoverClose(tabs[2], true)
+	e.tabHoverClose(tabs[0], false)
+	if e.tabClose != tabs[2] {
+		t.Fatal("leaving another tab cleared the × hover")
+	}
+	e.tabHoverClose(tabs[2], false)
+	if e.tabClose != nil {
+		t.Fatal("× hover not cleared")
 	}
 }

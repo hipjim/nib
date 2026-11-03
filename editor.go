@@ -68,6 +68,7 @@ type Editor struct {
 	nextOpen  int  // tabs: opening order of the last document opened
 	tabScroll int  // tabs: pixels scrolled when they do not fit
 	tabHover  *doc // tabs: the one under the pointer
+	tabClose  *doc // tabs: the one whose × is under the pointer
 	restoring bool // documents are being reopened from the session
 
 	followCursor bool
@@ -1495,7 +1496,7 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 		}
 	}
 	if e.path == "" && e.dir == nil && e.prompt == promptNone && e.buf.LineCount() == 1 && e.buf.Line(0) == "" {
-		e.drawHint(gtx, xOf, sy)
+		e.drawHint(gtx, width, height)
 	}
 
 	if e.focused && e.prompt == promptNone {

@@ -15,10 +15,12 @@ import (
 )
 
 // The tab bar lists the open documents above the text, in the order they
-// were opened, once there is more than one. Clicking a tab shows it and a
-// middle click closes it.
+// were opened, once there is more than one. Clicking a tab shows it; its ×
+// or a middle click closes it. An unsaved file shows ● in place of the ×
+// until the pointer is over the tab.
 
-// tabMinChars is how narrow a tab gets before the bar scrolls instead.
+// tabMinChars is how much of a name a tab keeps before the bar scrolls
+// instead. Every tab also has one cell for the × and a space before it.
 const tabMinChars = 8
 
 func (e *Editor) tabs() []*doc {
@@ -67,16 +69,13 @@ func (e *Editor) tabHeight(gtx layout.Context) int {
 func (e *Editor) tabLayout(tabs []*doc, names []string, width, pad int) (x0, w []int, scroll int) {
 	x0, w = make([]int, len(tabs)), make([]int, len(tabs))
 	total := 0
-	for i, d := range tabs {
-		n := utf8.RuneCountInString(names[i])
-		if d.buf.Dirty() {
-			n += 2
-		}
+	for i := range tabs {
+		n := utf8.RuneCountInString(names[i]) + 2
 		w[i] = int(float32(n)*e.charW) + 2*pad
 		total += w[i]
 	}
 	if total > width {
-		minW := int(float32(tabMinChars)*e.charW) + 2*pad
+		minW := int(float32(tabMinChars+2)*e.charW) + 2*pad
 		scale := float32(width) / float32(total)
 		total = 0
 		for i := range w {
@@ -106,8 +105,11 @@ func (e *Editor) drawTabs(gtx layout.Context, width, h int) {
 	fill(gtx, image.Rect(0, 0, width, h), colStatus)
 	fill(gtx, image.Rect(0, h-1, width, h), colCurLine)
 	y := (h - e.lineH) / 2
+	cw := int(math.Round(float64(e.charW)))
 	for i, d := range tabs {
 		r := image.Rect(x0[i]-scroll, 0, x0[i]+w[i]-scroll, h)
+		gx := r.Max.X - pad - cw // the × cell
+		d.closeR = image.Rect(gx-gtx.Dp(4), gtx.Dp(3), gx+cw+gtx.Dp(4), h-gtx.Dp(3))
 		if r.Max.X <= 0 || r.Min.X >= width {
 			continue
 		}
@@ -123,20 +125,22 @@ func (e *Editor) drawTabs(gtx layout.Context, width, h int) {
 		case d == e.tabHover:
 			fill(gtx, r, colCurLine)
 		}
-		room := int(math.Round(float64(float32(w[i]-2*pad) / e.charW)))
-		name := names[i]
-		if d.buf.Dirty() {
-			room -= 2
-		}
-		name = truncLeft(name, room)
-		e.label(gtx, r.Min.X+pad, y, name, c)
-		if d.buf.Dirty() {
-			dc := colInfo
+		room := int(math.Round(float64(float32(w[i]-2*pad)/e.charW))) - 2
+		e.label(gtx, r.Min.X+pad, y, truncLeft(names[i], room), c)
+		glyph, gc := "×", colInfo
+		switch {
+		case d == e.tabClose:
+			gc = colText
+			rr := clip.UniformRRect(d.closeR, gtx.Dp(3)).Push(gtx.Ops)
+			fill(gtx, d.closeR, colSel)
+			rr.Pop()
+		case d.buf.Dirty() && d != e.tabHover:
+			glyph = "●"
 			if d == e.doc {
-				dc = colAccent
+				gc = colAccent
 			}
-			e.label(gtx, r.Min.X+pad+int(float32(utf8.RuneCountInString(name)+1)*e.charW), y, "●", dc)
 		}
+		e.label(gtx, gx, y, glyph, gc)
 		fill(gtx, image.Rect(r.Max.X-1, gtx.Dp(6), r.Max.X, h-gtx.Dp(6)), colCurLine)
 		area.Pop()
 	}
@@ -148,7 +152,7 @@ func (e *Editor) tabEvents(gtx layout.Context) {
 		for {
 			ev, ok := gtx.Event(pointer.Filter{
 				Target:  d,
-				Kinds:   pointer.Press | pointer.Enter | pointer.Leave | pointer.Scroll,
+				Kinds:   pointer.Press | pointer.Move | pointer.Enter | pointer.Leave | pointer.Scroll,
 				ScrollX: pointer.ScrollRange{Min: -1 << 20, Max: 1 << 20},
 				ScrollY: pointer.ScrollRange{Min: -1 << 20, Max: 1 << 20},
 			})
@@ -159,13 +163,16 @@ func (e *Editor) tabEvents(gtx layout.Context) {
 			if !ok {
 				continue
 			}
+			at := image.Pt(int(pe.Position.X), int(pe.Position.Y))
 			switch pe.Kind {
-			case pointer.Enter:
+			case pointer.Enter, pointer.Move:
 				e.tabHover = d
+				e.tabHoverClose(d, at.In(d.closeR))
 			case pointer.Leave:
 				if e.tabHover == d {
 					e.tabHover = nil
 				}
+				e.tabHoverClose(d, false)
 			case pointer.Scroll:
 				e.tabScroll += int(pe.Scroll.X + pe.Scroll.Y)
 			case pointer.Press:
@@ -173,12 +180,32 @@ func (e *Editor) tabEvents(gtx layout.Context) {
 				case pe.Buttons.Contain(pointer.ButtonTertiary):
 					e.closeTab(d)
 				case pe.Buttons.Contain(pointer.ButtonPrimary):
-					e.prompt = promptNone
-					e.show(d)
+					e.tabPress(d, at)
 				}
 			}
 		}
 	}
+}
+
+// tabHoverClose records whether the pointer is over d's ×.
+func (e *Editor) tabHoverClose(d *doc, over bool) {
+	switch {
+	case over:
+		e.tabClose = d
+	case e.tabClose == d:
+		e.tabClose = nil
+	}
+}
+
+// tabPress handles a left click on a tab, at a point in the bar's
+// coordinates: on the × it closes the file, elsewhere it shows it.
+func (e *Editor) tabPress(d *doc, at image.Point) {
+	if at.In(d.closeR) {
+		e.closeTab(d)
+		return
+	}
+	e.prompt = promptNone
+	e.show(d)
 }
 
 func (e *Editor) showTab(n int) {
@@ -220,6 +247,9 @@ func (e *Editor) closeTab(d *doc) {
 	if e.tabHover == d {
 		e.tabHover = nil
 	}
+	if e.tabClose == d {
+		e.tabClose = nil
+	}
 }
 
 func (e *Editor) closeOthers() {
@@ -228,6 +258,9 @@ func (e *Editor) closeOthers() {
 	closed := n - len(e.docs)
 	if !slices.Contains(e.docs, e.tabHover) {
 		e.tabHover = nil
+	}
+	if !slices.Contains(e.docs, e.tabClose) {
+		e.tabClose = nil
 	}
 	msg := fmt.Sprintf("closed %d files", closed)
 	switch closed {

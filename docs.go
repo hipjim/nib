@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,14 +22,15 @@ type doc struct {
 	goal     int     // visual column kept across vertical moves; -1 if unset
 	scrollY  float64 // pixels; float32 is too coarse past ~16M px
 	scrollX  float32
-	dir      *dirView  // set for a folder listing
-	stamp    stamp     // the file on disk when last read or written
-	conflict bool      // changed on disk while edited here
-	pending  *place    // cursor to restore once loading finishes
-	opened   int       // order of opening, for the tab bar
-	used     bool      // shown by the user this session, not just restored
-	idle     int       // sessions in a row restored but not used
-	loadAt   time.Time // when a file still being indexed was opened
+	dir      *dirView        // set for a folder listing
+	stamp    stamp           // the file on disk when last read or written
+	conflict bool            // changed on disk while edited here
+	pending  *place          // cursor to restore once loading finishes
+	opened   int             // order of opening, for the tab bar
+	used     bool            // shown by the user this session, not just restored
+	idle     int             // sessions in a row restored but not used
+	loadAt   time.Time       // when a file still being indexed was opened
+	closeR   image.Rectangle // the tab's ×, where it was last drawn
 }
 
 func openedMsg(lines int, d time.Duration) string {

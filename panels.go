@@ -11,7 +11,13 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"gioui.org/f32"
+	"gioui.org/font"
 	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/op/paint"
+	"gioui.org/unit"
+	"gioui.org/widget"
 )
 
 func (e *Editor) panel(gtx layout.Context, r image.Rectangle) {
@@ -85,22 +91,68 @@ func (e *Editor) openPaths() map[string]bool {
 	return m
 }
 
-func (e *Editor) drawHint(gtx layout.Context, xOf func(int) int, sy int) {
+// drawHint greets an empty scratch buffer: the logo, the name and the
+// ways to open something, centered. The logo and then the name go when
+// the window is too short for them.
+func (e *Editor) drawHint(gtx layout.Context, width, height int) {
 	hints := [][2]string{
 		{shortcutName + "O", "browse the folder"},
 		{shortcutName + "P", "find a file in the folder"},
 		{shortcutName + shiftName + "F", "search the folder"},
 		{shortcutName + shiftName + "/", "all the keys"},
 	}
-	w := 0
+	keyW, descW := 0, 0
 	for _, h := range hints {
-		w = max(w, utf8.RuneCountInString(h[0]))
+		keyW = max(keyW, utf8.RuneCountInString(h[0]))
+		descW = max(descW, utf8.RuneCountInString(h[1]))
 	}
+	lh := e.lineH
+	logoH, nameH := 5*lh, 2*lh
+	h := len(hints)*lh + nameH + lh/2 + logoH + lh
+	// Never over the first line, where the cursor is, nor the last.
+	if h > height-4*lh {
+		h -= logoH + lh
+		logoH = 0
+	}
+	if h > height-4*lh {
+		h -= nameH + lh/2
+		nameH = 0
+	}
+	cx := e.textX + (width-e.textX)/2
+	y := max(2*lh, (height-h)/2)
+	if logoH > 0 {
+		scale := float32(logoH) / float32(logoBox.Dy())
+		x := float32(cx) - float32(logoBox.Min.X+logoBox.Max.X)/2*scale
+		drawLogo(gtx.Ops, f32.Pt(x, float32(y)-float32(logoBox.Min.Y)*scale), scale, colAccent)
+		y += logoH + lh
+	}
+	if nameH > 0 {
+		e.title(gtx, cx, y, "nib", colText, e.size*2)
+		y += nameH + lh/2
+	}
+	cols := keyW + 2 + descW
+	x := max(e.textX, cx-int(float32(cols)*e.charW)/2)
 	for i, h := range hints {
-		y := (i+2)*e.lineH - sy
-		e.label(gtx, xOf(0), y, h[0], colInfo)
-		e.label(gtx, xOf(w+2), y, h[1], colInfo)
+		ly := y + i*lh
+		e.label(gtx, x+int(float32(keyW-utf8.RuneCountInString(h[0]))*e.charW), ly, h[0], colInfo)
+		e.label(gtx, x+int(float32(keyW+2)*e.charW), ly, h[1], colInfo)
 	}
+}
+
+// title draws s in bold at the given size, centered on cx.
+func (e *Editor) title(gtx layout.Context, cx, y int, s string, c color.NRGBA, size unit.Sp) {
+	f := e.font
+	f.Weight = font.Bold
+	g := gtx
+	g.Constraints = layout.Constraints{Max: image.Pt(1<<20, 1<<20)}
+	m := op.Record(gtx.Ops)
+	paint.ColorOp{Color: c}.Add(gtx.Ops)
+	mat := m.Stop()
+	m = op.Record(gtx.Ops)
+	dims := widget.Label{MaxLines: 1}.Layout(g, e.shaper, f, size, s, mat)
+	text := m.Stop()
+	defer op.Offset(image.Pt(cx-dims.Size.X/2, y)).Push(gtx.Ops).Pop()
+	text.Add(gtx.Ops)
 }
 
 func keyRows() [][2]string {
