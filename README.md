@@ -92,8 +92,8 @@ CRLF line endings are detected and kept. `⌘⇧/` lists every key.
 ### Open files
 
 With two or more files open, a tab bar lists them in the order they were
-opened, with a dot on the unsaved ones. Click a tab to switch, middle-click
-to close it. `Ctrl+Tab` and `Ctrl+⇧Tab` go to the next and previous tab,
+opened, with a dot on the unsaved ones. Click a tab to switch, its `×` or a
+middle-click to close it. `Ctrl+Tab` and `Ctrl+⇧Tab` go to the next and previous tab,
 `⌘1` to `⌘9` to the nth, `⌘W` closes the current file and `⌘⇧W` every
 other saved one. `⌘P` with nothing typed lists the open files most recent
 first, so `⌘P`, `Enter` switches back to the last one.
@@ -243,11 +243,19 @@ everyday code, while nib does only what is on screen. Run
 ```sh
 go test ./...                                                 # tests
 NIB_FILE=big.xml go test -run '^$' -bench Big .               # load, edit, find and save benchmarks
+NIB_GEN=big.log NIB_GEN_MB=256 go test -run TestGenLog .      # a synthetic big file for them
 NIB_SHOT=out.png NIB_FILE=main.go go test -run TestRender .   # offscreen screenshot
+NIB_GOLDEN=golden go test -run TestGolden .                   # screenshots before/after a change, diffed
 NIB_GIF=docs/demo.gif go test -run TestGif .                 # the README demo, needs ~1 GB of disk for a while
 ```
 
-Every push is tested on macOS, Linux and Windows. Pushing a tag like `v1.2.3`
+[AGENTS.md](AGENTS.md) spells out the performance rules the code keeps
+to and how to check a change against them; read it before changing
+anything that touches the buffer, the search or the drawing.
+
+Every push is tested on macOS, Linux and Windows, and every pull request
+runs the benchmarks against its base and fails if one got noticeably
+slower. Pushing a tag like `v1.2.3`
 builds every platform and publishes a release
 ([`release.yml`](.github/workflows/release.yml)). `scripts/macos-app.sh`
 builds the macOS app locally, and `NIB_ICON=appicon.png go test -run TestIcon .`
