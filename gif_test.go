@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -236,6 +237,26 @@ func TestGif(t *testing.T) {
 		area += fr.r.Dx() * fr.r.Dy()
 	}
 	t.Logf("%d frames, %.1f s, %.1f MB, %.1f full frames of pixels", len(rec.frames), rec.seconds(), float64(fi.Size())/1e6, float64(area)/float64(w*h))
+}
+
+// TestGenLog writes a synthetic log of NIB_GEN_MB megabytes (default 64)
+// to NIB_GEN, for the benchmarks to open as NIB_FILE where no real big
+// file is at hand, as in CI.
+func TestGenLog(t *testing.T) {
+	out := os.Getenv("NIB_GEN")
+	if out == "" {
+		t.Skip("set NIB_GEN to write a log")
+	}
+	mb := 64
+	if s := os.Getenv("NIB_GEN_MB"); s != "" {
+		var err error
+		if mb, err = strconv.Atoi(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := genLog(out, int64(mb)<<20); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func genLog(path string, size int64) error {

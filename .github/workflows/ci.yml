@@ -25,3 +25,41 @@ jobs:
             libxkbcommon-x11-dev libgles2-mesa-dev libegl1-mesa-dev libffi-dev libxcursor-dev libvulkan-dev
       - run: go vet ./...
       - run: go test ./...
+
+  # Runs the benchmarks for the PR and for its merge base, taking turns on
+  # the same runner, and fails when one got significantly slower than
+  # scripts/benchcheck allows. See AGENTS.md.
+  bench:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Install Gio's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc pkg-config libwayland-dev libx11-dev libx11-xcb-dev \
+            libxkbcommon-x11-dev libgles2-mesa-dev libegl1-mesa-dev libffi-dev libxcursor-dev libvulkan-dev
+      - name: Build the benchmarks for this PR and for its base
+        run: |
+          go test -c -o "$RUNNER_TEMP/new.test" .
+          base=$(git merge-base ${{ github.event.pull_request.base.sha }} HEAD)
+          git worktree add "$RUNNER_TEMP/base" "$base"
+          (cd "$RUNNER_TEMP/base" && go test -c -o "$RUNNER_TEMP/old.test" .)
+          NIB_GEN="$RUNNER_TEMP/big.log" NIB_GEN_MB=32 go test -run TestGenLog .
+      - name: Run them, taking turns
+        run: |
+          for round in 1 2 3 4 5 6; do
+            for side in old new; do
+              NIB_FILE="$RUNNER_TEMP/big.log" "$RUNNER_TEMP/$side.test" -test.run '^$' -test.bench . -test.benchtime 300ms >> "$RUNNER_TEMP/$side.txt"
+            done
+          done
+      - name: Compare
+        run: |
+          benchstat="go run golang.org/x/perf/cmd/benchstat@v0.0.0-20261009192801-be2c69fb417e"
+          $benchstat "$RUNNER_TEMP/old.txt" "$RUNNER_TEMP/new.txt"
+          $benchstat -format csv "$RUNNER_TEMP/old.txt" "$RUNNER_TEMP/new.txt" | go run ./scripts/benchcheck -max 10
