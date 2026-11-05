@@ -120,6 +120,7 @@ these settings:
 | `NIB_LINE=line[:col]` | the cursor there |
 | `NIB_TABS=a.go,b.go` | more files open, the first one unsaved; `NIB_TABX=1` hovers the first tab's × |
 | `NIB_FINDER=query` | the file finder |
+| `NIB_PALETTE=query` | the command palette |
 | `NIB_GREP=query` | the folder search |
 | `NIB_FIND=text` / `NIB_REPLACE=old:new` | the find or replace prompt |
 | `NIB_KEYS=1` / `NIB_INFO=1` | the key reference (`NIB_KEYS=end` scrolled to its end) / file properties |

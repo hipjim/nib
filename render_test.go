@@ -21,7 +21,8 @@ import (
 
 // TestRender draws the editor offscreen. Set NIB_SHOT=out.png to save it,
 // NIB_FILE to pick the file or folder and NIB_LINE=line[:col] to put the
-// cursor there. NIB_FINDER=query opens the file finder, NIB_INFO=1 the properties,
+// cursor there. NIB_FINDER=query opens the file finder, NIB_PALETTE=query the
+// command palette, NIB_INFO=1 the properties,
 // NIB_GREP=query the folder search and NIB_REPLACE=old:new the replace
 // prompt, NIB_KEYS=1 the key reference (NIB_KEYS=end scrolled to its end), NIB_TABS=a,b opens more files (NIB_TABX=1
 // hovers the first tab's ×) and NIB_FILE=- an empty scratch buffer. NIB_LIGHT=1
@@ -51,6 +52,7 @@ var goldenScenes = []struct {
 	{"tabs", map[string]string{"NIB_TABS": "tabs.go,panels.go,docs.go", "NIB_TABX": "1"}},
 	{"keys", map[string]string{"NIB_KEYS": "1"}},
 	{"keys-end", map[string]string{"NIB_KEYS": "end"}},
+	{"palette", map[string]string{"NIB_PALETTE": "line"}},
 	{"find", map[string]string{"NIB_FIND": "func"}},
 	{"replace", map[string]string{"NIB_REPLACE": "func:fn"}},
 }
@@ -175,6 +177,12 @@ func renderScene(t *testing.T, lookup func(string) (string, bool)) *image.RGBA {
 			}
 			time.Sleep(time.Millisecond)
 		}
+		e.setInput(q)
+		ops.Reset()
+		e.Layout(gtx)
+	}
+	if q, ok := lookup("NIB_PALETTE"); ok {
+		e.openPalette()
 		e.setInput(q)
 		ops.Reset()
 		e.Layout(gtx)

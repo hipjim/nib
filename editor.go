@@ -42,9 +42,10 @@ const (
 	promptReplace
 	promptWith
 	promptGrep
+	promptPalette
 )
 
-var promptLabels = [...]string{"", "find", "goto line", "open", "save as", "file", "replace", "with", "search folder"}
+var promptLabels = [...]string{"", "find", "goto line", "open", "save as", "file", "replace", "with", "search folder", "command"}
 
 const blinkPeriod = 530 * time.Millisecond
 
@@ -54,17 +55,18 @@ var shiftName = map[bool]string{true: "⇧", false: "Shift+"}[runtime.GOOS == "d
 
 type Editor struct {
 	*doc
-	docs   []*doc // open documents, most recent first
-	root   string // folder the file finder searches
-	finder finder
-	grep   grep
-	plain  bool    // syntax highlighting turned off
-	light  bool    // light theme
-	showWS bool    // spaces and tabs drawn as · and →
-	info   bool    // file properties panel shown
-	keys   bool    // key reference panel shown
-	keysY  float64 // keys: pixels scrolled when the rows do not fit
-	count  matchCount
+	docs    []*doc // open documents, most recent first
+	root    string // folder the file finder searches
+	finder  finder
+	grep    grep
+	palette commandList
+	plain   bool    // syntax highlighting turned off
+	light   bool    // light theme
+	showWS  bool    // spaces and tabs drawn as · and →
+	info    bool    // file properties panel shown
+	keys    bool    // key reference panel shown
+	keysY   float64 // keys: pixels scrolled when the rows do not fit
+	count   matchCount
 
 	nextOpen  int  // tabs: opening order of the last document opened
 	tabScroll int  // tabs: pixels scrolled when they do not fit
@@ -526,6 +528,9 @@ func (e *Editor) setInput(s string) {
 	case promptFiles:
 		e.finder.query, e.finder.sel = s, 0
 		e.finder.rank()
+	case promptPalette:
+		e.palette.sel = 0
+		e.palette.rank(s)
 	}
 }
 
@@ -806,7 +811,7 @@ func (e *Editor) pointer(gtx layout.Context, ev pointer.Event) {
 		if !ev.Buttons.Contain(pointer.ButtonPrimary) {
 			return
 		}
-		if e.prompt == promptFiles || e.prompt == promptGrep || e.keys {
+		if e.prompt == promptFiles || e.prompt == promptGrep || e.prompt == promptPalette || e.keys {
 			// The panel covers the text; a click puts it away.
 			e.prompt, e.keys = promptNone, false
 			return
@@ -881,7 +886,7 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 	m := k.Modifiers
 	shift := m.Contain(key.ModShift)
 
-	if e.prompt != promptNone && e.promptKey(k) {
+	if e.prompt != promptNone && e.promptKey(gtx, k) {
 		return
 	}
 	if e.keys && m == 0 && e.keysKey(k.Name) {
@@ -918,7 +923,11 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 				e.up()
 			}
 		case "P":
-			e.openFinder()
+			if shift {
+				e.openPalette()
+			} else {
+				e.openFinder()
+			}
 		case "E":
 			e.up()
 		case "I":
@@ -1121,7 +1130,7 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 
 // promptKey handles a key while the prompt is open. It returns false to let
 // the editor handle the key instead.
-func (e *Editor) promptKey(k key.Event) bool {
+func (e *Editor) promptKey(gtx layout.Context, k key.Event) bool {
 	switch k.Name {
 	case key.NameEscape:
 		e.prompt = promptNone
@@ -1131,6 +1140,8 @@ func (e *Editor) promptKey(k key.Event) bool {
 			e.findNext(true)
 		case e.prompt == promptWith && k.Modifiers.Contain(key.ModShortcut):
 			e.replaceAll()
+		case e.prompt == promptPalette:
+			e.runCommand(gtx)
 		default:
 			e.submitPrompt()
 		}
@@ -1148,6 +1159,13 @@ func (e *Editor) promptKey(k key.Event) bool {
 				d = -d
 			}
 			g.sel = max(0, min(g.sel+d, len(g.hits)-1))
+		}
+		if p := &e.palette; e.prompt == promptPalette {
+			d := -e.paletteRows()
+			if k.Name == key.NamePageUp {
+				d = -d
+			}
+			p.sel = max(0, min(p.sel+d, len(p.results)-1))
 		}
 	case key.NameUpArrow, key.NameDownArrow, key.NameF3:
 		if g := &e.grep; e.prompt == promptGrep {
@@ -1167,6 +1185,14 @@ func (e *Editor) promptKey(k key.Event) bool {
 			}
 			return true
 		}
+		if p := &e.palette; e.prompt == promptPalette {
+			if k.Name == key.NameUpArrow {
+				p.sel = min(p.sel+1, max(0, len(p.results)-1))
+			} else {
+				p.sel = max(p.sel-1, 0)
+			}
+			return true
+		}
 		if e.prompt != promptFind && e.prompt != promptReplace && e.prompt != promptWith {
 			return true
 		}
@@ -1180,7 +1206,14 @@ func (e *Editor) promptKey(k key.Event) bool {
 		}
 		e.prompt = promptNone
 		return false
-	case "A", "C", "X", "Z", "Y", "S", "O", "R", "T", "G", "D", "K", "L", "H", "P", "I", "W", "E", "Q", "=", "+", "-", "0", "/", "?",
+	case "P":
+		if e.prompt == promptPalette && k.Modifiers.Contain(key.ModShift) {
+			e.prompt = promptNone // ⌘⇧P again puts the palette away
+			return true
+		}
+		e.prompt = promptNone
+		return false
+	case "A", "C", "X", "Z", "Y", "S", "O", "R", "T", "G", "D", "K", "L", "H", "I", "W", "E", "Q", "=", "+", "-", "0", "/", "?",
 		"1", "2", "3", "4", "5", "6", "7", "8", "9", key.NameF1:
 		// Any other shortcut closes the prompt and runs normally.
 		e.prompt = promptNone
@@ -1350,6 +1383,8 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 		e.drawFinder(gtx, size.X, textH)
 	} else if e.prompt == promptGrep {
 		e.drawGrep(gtx, size.X, textH)
+	} else if e.prompt == promptPalette {
+		e.drawPalette(gtx, size.X, textH)
 	} else if e.keys {
 		e.drawKeys(gtx, size.X, textH)
 	} else if e.info {
@@ -1615,9 +1650,12 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	if e.prompt == promptWith {
 		right = "Enter replace · " + shortcutName + "Enter all · ↓ skip"
 	}
+	if p := &e.palette; e.prompt == promptPalette {
+		right = plural(int64(len(p.results)), "command")
+	}
 	if s := e.matchCountText(); s != "" {
 		right = s + "  " + right
-	} else if a, b, ok := e.sel(); ok && e.prompt != promptFiles && e.prompt != promptGrep && e.prompt != promptWith {
+	} else if a, b, ok := e.sel(); ok && e.prompt != promptFiles && e.prompt != promptGrep && e.prompt != promptWith && e.prompt != promptPalette {
 		if a.Line == b.Line {
 			right = fmt.Sprintf("(%d sel)  ", utf8.RuneCountInString(e.buf.Text(a, b))) + right
 		} else {

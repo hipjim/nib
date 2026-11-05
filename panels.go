@@ -82,6 +82,48 @@ func (e *Editor) drawFinder(gtx layout.Context, width, bottom int) {
 	}
 }
 
+// paletteRows is how many commands fit above the prompt.
+func (e *Editor) paletteRows() int { return max(1, (e.viewH*7/10)/max(1, e.lineH)) }
+
+// drawPalette lists the matching commands above the prompt like the file
+// finder, best at the bottom, each with its key at the right.
+func (e *Editor) drawPalette(gtx layout.Context, width, bottom int) {
+	p := &e.palette
+	lh := e.lineH
+	rows := max(1, min(len(p.results), e.paletteRows(), max(1, bottom/lh-1)))
+	top := bottom - rows*lh - gtx.Dp(8)
+	e.panel(gtx, image.Rect(-1, top, width+1, bottom+1))
+	pad := gtx.Dp(12)
+	if len(p.results) == 0 {
+		e.label(gtx, pad, bottom-lh-gtx.Dp(4), "no such command", colInfo)
+		return
+	}
+	q := []rune(e.input)
+	fold := !slices.ContainsFunc(q, unicode.IsUpper)
+	if fold {
+		for i, r := range q {
+			q[i] = unicode.ToLower(r)
+		}
+	}
+	first := max(0, p.sel-rows+1)
+	for i, idx := range p.results[first : first+rows] {
+		c := p.all[idx]
+		y := bottom - (i+1)*lh - gtx.Dp(4)
+		if first+i == p.sel {
+			fill(gtx, image.Rect(0, y, width, y+lh), colSel)
+			fill(gtx, image.Rect(0, y, gtx.Dp(3), y+lh), colAccent)
+		}
+		pos, _ := fuzzyMatch(c.name, q, fold, nil)
+		e.drawRuns(gtx, pad, y, c.name, func(b int) color.NRGBA {
+			if slices.Contains(pos, b) {
+				return colAccent
+			}
+			return colText
+		})
+		e.label(gtx, width-pad-int(float32(utf8.RuneCountInString(c.keys))*e.charW), y, c.keys, colInfo)
+	}
+}
+
 func (e *Editor) openPaths() map[string]bool {
 	m := map[string]bool{}
 	for _, d := range e.docs {
@@ -161,6 +203,7 @@ func keyRows() [][2]string {
 		{"⌘S / ⌘⇧S", "save / save as"},
 		{"⌘O / ⌘⇧O", "browse the folder / open a path (Tab completes)"},
 		{"⌘P or ⇧⇧", "find a file in the folder"},
+		{"⌘⇧P", "run any command by name"},
 		{"⌘⇧F", "search every file in the folder"},
 		{"⌘E", "show the file's folder"},
 		{"⌘I / ⌘⇧I", "file properties / show spaces and tabs"},

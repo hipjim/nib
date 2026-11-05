@@ -132,6 +132,8 @@ A lower-case query ignores case; one with a capital letter matches exactly.
   one nib was started in or last opened. It skips `.git`, `node_modules` and
   `.gitignore` matches, and ranks 40,000 paths in a millisecond. Files you
   have open are listed first and marked with a dot.
+- **`⌘⇧P`** runs any command by a few letters of its name, with its key shown
+  beside it, so nothing has to be remembered: `thm` switches the theme.
 - **`⌘I`** shows a file's properties: size, lines, created, modified and
   accessed times, permissions and owner.
 - **`⌘T`** opens a terminal in the folder of the current file: on macOS the
@@ -166,6 +168,7 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 | --- | --- |
 | `⌘S` / `⌘⇧S` | save / save as |
 | `⌘P` or `⇧⇧` | find a file in the folder (`↑` / `↓` pick, `Enter` opens) |
+| `⌘⇧P` | run any command by name (`↑` / `↓` pick, `Enter` runs) |
 | `⌘O` / `⌘⇧O` | browse the file's folder / open a path (`Tab` completes) |
 | `⌘E` | show the current file's folder |
 | `⌘I` / `⌘⇧I` | file properties / show spaces and tabs |
