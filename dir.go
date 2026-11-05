@@ -258,6 +258,14 @@ func ago(t time.Time) string {
 	return ""
 }
 
+// plural counts things: "1 line", "2,048 lines".
+func plural(n int64, unit string) string {
+	if n == 1 {
+		return "1 " + unit
+	}
+	return groupDigits(n) + " " + unit + "s"
+}
+
 func groupDigits(n int64) string {
 	s := strconv.FormatInt(n, 10)
 	for i := len(s) - 3; i > 0; i -= 3 {

@@ -58,11 +58,12 @@ type Editor struct {
 	root   string // folder the file finder searches
 	finder finder
 	grep   grep
-	plain  bool // syntax highlighting turned off
-	light  bool // light theme
-	showWS bool // spaces and tabs drawn as · and →
-	info   bool // file properties panel shown
-	keys   bool // key reference panel shown
+	plain  bool    // syntax highlighting turned off
+	light  bool    // light theme
+	showWS bool    // spaces and tabs drawn as · and →
+	info   bool    // file properties panel shown
+	keys   bool    // key reference panel shown
+	keysY  float64 // keys: pixels scrolled when the rows do not fit
 	count  matchCount
 
 	nextOpen  int  // tabs: opening order of the last document opened
@@ -152,7 +153,7 @@ func (e *Editor) save(path string) {
 		e.hl = newHighlighter(path)
 	}
 	e.path, e.stamp, e.conflict = path, statStamp(path), false
-	e.flash(fmt.Sprintf("wrote %d lines", e.buf.LineCount()), false)
+	e.flash("wrote "+plural(int64(e.buf.LineCount()), "line"), false)
 }
 
 func expandHome(p string) string {
@@ -795,6 +796,10 @@ func (e *Editor) events(gtx layout.Context) {
 func (e *Editor) pointer(gtx layout.Context, ev pointer.Event) {
 	switch ev.Kind {
 	case pointer.Scroll:
+		if e.keys {
+			e.keysY += float64(ev.Scroll.Y)
+			return
+		}
 		e.scrollY += float64(ev.Scroll.Y)
 		e.scrollX += ev.Scroll.X
 	case pointer.Press:
@@ -879,6 +884,9 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 	if e.prompt != promptNone && e.promptKey(k) {
 		return
 	}
+	if e.keys && m == 0 && e.keysKey(k.Name) {
+		return
+	}
 
 	if m.Contain(key.ModShortcut) && len(k.Name) == 1 {
 		switch k.Name {
@@ -921,7 +929,7 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 			}
 		case "/", "?":
 			if shift || k.Name == "?" {
-				e.keys = !e.keys
+				e.toggleKeys()
 			} else {
 				e.toggleComment()
 			}
@@ -1105,7 +1113,7 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 		e.anchor = e.cursor
 		e.info, e.keys = false, false
 	case key.NameF1:
-		e.keys = !e.keys
+		e.toggleKeys()
 	case key.NameF3:
 		e.findNext(shift)
 	}
@@ -1402,7 +1410,7 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 		y := i*lh - sy
 		n := strconv.Itoa(i + 1)
 		c := colDim
-		if i == e.cursor.Line {
+		if i == e.cursor.Line || hasSel && i >= selA.Line && (i < selB.Line || i == selB.Line && selB.Col > 0) {
 			c = colGutterHi
 		}
 		x := gutterW - int(float32(len(n)+1)*e.charW)
@@ -1560,6 +1568,9 @@ func (e *Editor) drawSpans(gtx layout.Context, xOf func(int) int, y int, line st
 func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	fill(gtx, r, colStatus)
 	fill(gtx, image.Rect(r.Min.X, r.Min.Y, r.Max.X, r.Min.Y+1), colCurLine)
+	if e.buf.Loading() {
+		fill(gtx, image.Rect(r.Min.X, r.Min.Y, r.Min.X+r.Dx()*e.buf.LoadPct()/100, r.Min.Y+gtx.Dp(2)), colAccent)
+	}
 	y := r.Min.Y + (r.Dy()-e.lineH)/2
 	pad := gtx.Dp(12)
 	cw := e.charW
@@ -1572,10 +1583,10 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	if e.buf.CRLF {
 		eol = "CRLF"
 	}
-	right := fmt.Sprintf("%d:%d  %s  %s  %s lines", e.cursor.Line+1,
-		e.buf.VisCol(e.cursor.Line, e.cursor.Col)+1, ind, eol, groupDigits(int64(e.buf.LineCount())))
+	right := fmt.Sprintf("%d:%d  %s  %s  %s", e.cursor.Line+1,
+		e.buf.VisCol(e.cursor.Line, e.cursor.Col)+1, ind, eol, plural(int64(e.buf.LineCount()), "line"))
 	if e.dir != nil {
-		right = fmt.Sprintf("%d items", e.dir.count)
+		right = plural(int64(e.dir.count), "item")
 	}
 	if e.buf.Loading() {
 		right = fmt.Sprintf("loading %d%%  ", e.buf.LoadPct()) + right
@@ -1583,7 +1594,7 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	if f := &e.finder; e.prompt == promptFiles {
 		right = fmt.Sprintf("%s/%s files", groupDigits(int64(f.matches)), groupDigits(int64(len(f.paths))))
 		if f.query == "" {
-			right = "type to search " + groupDigits(int64(len(f.paths))) + " files"
+			right = "type to search " + plural(int64(len(f.paths)), "file")
 			if n := len(f.recent); n > 0 {
 				right = fmt.Sprintf("%d other open · %s", n, right)
 			}
@@ -1593,7 +1604,7 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 		}
 	}
 	if g := &e.grep; e.prompt == promptGrep {
-		right = fmt.Sprintf("%s lines in %s files", groupDigits(int64(len(g.hits))), groupDigits(int64(g.files)))
+		right = plural(int64(len(g.hits)), "line") + " in " + plural(int64(g.files), "file")
 		switch {
 		case g.results != nil:
 			right = fmt.Sprintf("searching %s files…  ", groupDigits(g.searched.Load())) + right
@@ -1631,8 +1642,10 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 		}
 		e.label(gtx, x, y, lbl, c)
 		x += int(float32(utf8.RuneCountInString(lbl)+1) * cw)
-		e.label(gtx, x, y, e.input, colText)
-		cx := x + int(float32(utf8.RuneCountInString(e.input))*cw)
+		// A long input keeps its end, where the cursor is, in view.
+		in := truncLeft(e.input, int(float32(rx-x)/cw)-2)
+		e.label(gtx, x, y, in, colText)
+		cx := x + int(float32(utf8.RuneCountInString(in))*cw)
 		fill(gtx, image.Rect(cx, y+gtx.Dp(2), cx+gtx.Dp(2), y+e.lineH-gtx.Dp(2)), colAccent)
 		return
 	}
@@ -1688,6 +1701,14 @@ func truncLeft(s string, n int) string {
 		return s
 	}
 	return "…" + string(r[len(r)-n+1:])
+}
+
+func truncRight(s string, n int) string {
+	r := []rune(s)
+	if n <= 1 || len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 // folderName is a folder's name with a trailing separator, or the whole

@@ -34,7 +34,7 @@ type doc struct {
 }
 
 func openedMsg(lines int, d time.Duration) string {
-	return "opened " + groupDigits(int64(lines)) + " lines" + tookText(d)
+	return "opened " + plural(int64(lines), "line") + tookText(d)
 }
 
 func tookText(d time.Duration) string {

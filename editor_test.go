@@ -127,6 +127,40 @@ func TestTextHelpers(t *testing.T) {
 	if got := completePath("go.m"); got != "go.mod" {
 		t.Errorf("completePath %q", got)
 	}
+	if a, b := truncLeft("abcdef", 4), truncRight("abcdef", 4); a != "…def" || b != "abc…" {
+		t.Errorf("trunc %q %q", a, b)
+	}
+	if a, b := plural(1, "line"), plural(1200, "file"); a != "1 line" || b != "1,200 files" {
+		t.Errorf("plural %q %q", a, b)
+	}
+}
+
+// The key reference takes the arrows and the wheel while it is open, and
+// the text behind it stays where it was.
+func TestKeysScroll(t *testing.T) {
+	e := newTestEditor(strings.Repeat("x\n", 100), Pos{50, 0})
+	e.lineH, e.viewH = 40, 800
+	e.scrollY = 1000
+	e.toggleKeys()
+	e.key(layout.Context{}, key.Event{Name: key.NameDownArrow}, false)
+	e.key(layout.Context{}, key.Event{Name: key.NameDownArrow}, false)
+	e.pointer(layout.Context{}, pointer.Event{Kind: pointer.Scroll, Scroll: f32.Pt(0, 15)})
+	if e.keysY != 95 || e.cursor.Line != 50 || e.scrollY != 1000 {
+		t.Fatalf("keysY %v cursor %v scrollY %v", e.keysY, e.cursor, e.scrollY)
+	}
+	e.key(layout.Context{}, key.Event{Name: key.NameUpArrow}, false)
+	if e.keysY != 55 {
+		t.Fatalf("keysY %v", e.keysY)
+	}
+	e.key(layout.Context{}, key.Event{Name: key.NameEscape}, false)
+	e.key(layout.Context{}, key.Event{Name: key.NameDownArrow}, false)
+	if e.keys || e.cursor.Line != 51 {
+		t.Fatalf("after Esc: keys %v cursor %v", e.keys, e.cursor)
+	}
+	e.toggleKeys()
+	if e.keysY != 0 {
+		t.Fatalf("reopened at %v, want the top", e.keysY)
+	}
 }
 
 func BenchmarkLoadBig(b *testing.B) {

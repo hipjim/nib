@@ -13,6 +13,7 @@ import (
 
 	"gioui.org/f32"
 	"gioui.org/font"
+	"gioui.org/io/key"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/paint"
@@ -190,6 +191,34 @@ func keyRows() [][2]string {
 	return rows
 }
 
+func (e *Editor) toggleKeys() { e.keys, e.keysY = !e.keys, 0 }
+
+// keysKey scrolls the key reference while it covers the text, so the
+// arrows do not move a cursor nobody can see. It returns false for any
+// other key, which the editor handles.
+func (e *Editor) keysKey(name key.Name) bool {
+	lh := float64(e.lineH)
+	switch name {
+	case key.NameUpArrow:
+		e.keysY -= lh
+	case key.NameDownArrow:
+		e.keysY += lh
+	case key.NamePageUp:
+		e.keysY -= float64(e.viewH) / 2
+	case key.NamePageDown:
+		e.keysY += float64(e.viewH) / 2
+	case key.NameHome:
+		e.keysY = 0
+	case key.NameEnd:
+		e.keysY = 1 << 30 // drawKeys clamps it to the last row
+	default:
+		return false
+	}
+	return true
+}
+
+// drawKeys lists the keys in a panel over the text. When the window is
+// too short for all of them the list scrolls, with a thumb at its edge.
 func (e *Editor) drawKeys(gtx layout.Context, width, bottom int) {
 	rows := keyRows()
 	lh := e.lineH
@@ -209,19 +238,28 @@ func (e *Editor) drawKeys(gtx layout.Context, width, bottom int) {
 	r := image.Rect((width-w)/2, (bottom-h)/2, (width+w)/2, (bottom+h)/2)
 	e.panel(gtx, r)
 
+	maxY := float64((len(rows) - n) * lh)
+	e.keysY = max(0, min(e.keysY, maxY))
+	top := int(e.keysY) / lh
+
 	x, y := r.Min.X+pad, r.Min.Y+gtx.Dp(8)
 	e.labelFont(gtx, x, y, "keys", colAccent, true)
 	esc := "Esc closes"
-	e.label(gtx, r.Max.X-pad-int(float32(len(esc))*e.charW), y, esc, colInfo)
+	if n < len(rows) {
+		esc = "↑↓ scroll · " + esc
+	}
+	e.label(gtx, r.Max.X-pad-int(float32(utf8.RuneCountInString(esc))*e.charW), y, esc, colInfo)
 	y += lh + gtx.Dp(4)
-	for i, row := range rows[:n] {
-		if i == n-1 && n < len(rows) {
-			e.label(gtx, x, y, "…", colInfo)
-			break
-		}
+	for _, row := range rows[top : top+n] {
 		e.label(gtx, x, y, row[0], colText)
-		e.label(gtx, x+int(float32(keyW+3)*e.charW), y, truncLeft(row[1], cols-keyW-3), colInfo)
+		e.label(gtx, x+int(float32(keyW+3)*e.charW), y, truncRight(row[1], cols-keyW-3), colInfo)
 		y += lh
+	}
+	if n < len(rows) {
+		trackY, trackH := r.Min.Y+lh+gtx.Dp(12), n*lh
+		size := max(lh, trackH*n/len(rows))
+		ty := trackY + int(float64(trackH-size)*e.keysY/maxY)
+		fill(gtx, image.Rect(r.Max.X-gtx.Dp(6), ty, r.Max.X-gtx.Dp(2), ty+size), colThumb)
 	}
 }
 

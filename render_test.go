@@ -23,7 +23,7 @@ import (
 // NIB_FILE to pick the file or folder and NIB_LINE=line[:col] to put the
 // cursor there. NIB_FINDER=query opens the file finder, NIB_INFO=1 the properties,
 // NIB_GREP=query the folder search and NIB_REPLACE=old:new the replace
-// prompt, NIB_KEYS=1 the key reference, NIB_TABS=a,b opens more files (NIB_TABX=1
+// prompt, NIB_KEYS=1 the key reference (NIB_KEYS=end scrolled to its end), NIB_TABS=a,b opens more files (NIB_TABX=1
 // hovers the first tab's ×) and NIB_FILE=- an empty scratch buffer. NIB_LIGHT=1
 // uses the light theme and NIB_WS=1 shows whitespace.
 func TestRender(t *testing.T) {
@@ -50,6 +50,7 @@ var goldenScenes = []struct {
 	{"whitespace", map[string]string{"NIB_WS": "1"}},
 	{"tabs", map[string]string{"NIB_TABS": "tabs.go,panels.go,docs.go", "NIB_TABX": "1"}},
 	{"keys", map[string]string{"NIB_KEYS": "1"}},
+	{"keys-end", map[string]string{"NIB_KEYS": "end"}},
 	{"find", map[string]string{"NIB_FIND": "func"}},
 	{"replace", map[string]string{"NIB_REPLACE": "func:fn"}},
 }
@@ -183,8 +184,11 @@ func renderScene(t *testing.T, lookup func(string) (string, bool)) *image.RGBA {
 		ops.Reset()
 		e.Layout(gtx)
 	}
-	if get("NIB_KEYS") != "" {
+	if v := get("NIB_KEYS"); v != "" {
 		e.keys = true
+		if v == "end" {
+			e.keysY = 1 << 30
+		}
 		ops.Reset()
 		e.Layout(gtx)
 	}
