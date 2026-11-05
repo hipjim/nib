@@ -1,6 +1,6 @@
 cask "nib" do
-  version "0.6.4"
-  sha256 "ddf7b1497e9e694af2bde4763ecb2f7c500d18050cfbb684280dc172f57f0cb1"
+  version "0.7.0"
+  sha256 "d79df5dc046b434ee7c0b0f1aecb132e5cbd648d67b771f6aaca3dda3478502a"
 
   url "https://github.com/hipjim/nib/releases/download/v#{version}/nib-v#{version}-macos-universal.zip"
   name "nib"
