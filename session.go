@@ -46,7 +46,9 @@ func sessionFile() string {
 }
 
 // saveSession writes the open documents and where they were left, at most
-// once a second unless forced. Unsaved edits are not kept. It reports
+// once a second unless forced. Unsaved edits are not kept, and neither are
+// folder listings: they are a way to a file, not work to come back to, and
+// a session of only listings would hide the start screen. It reports
 // whether a change is waiting to be written.
 func (e *Editor) saveSession(force bool) bool {
 	if e.sessionPath == "" {
@@ -59,7 +61,7 @@ func (e *Editor) saveSession(force bool) bool {
 		if d.used || d.buf.Dirty() {
 			idle = 0
 		}
-		if d.path != "" && idle < maxIdle && len(s.Docs) < maxSession {
+		if d.path != "" && d.dir == nil && idle < maxIdle && len(s.Docs) < maxSession {
 			s.Docs = append(s.Docs, place{Path: d.path, Line: d.cursor.Line, Col: d.cursor.Col, Scroll: d.scrollY, Idle: idle})
 			open[d.path] = true
 		}
@@ -102,6 +104,7 @@ func (e *Editor) keepSession() {
 }
 
 func (e *Editor) restoreSession() {
+	defer e.restoreRecovery()
 	s, ok := readSession(e.sessionPath)
 	if !ok {
 		return
@@ -113,8 +116,8 @@ func (e *Editor) restoreSession() {
 	e.restoring = true
 	defer func() { e.restoring = false }()
 	for _, p := range slices.Backward(s.Docs) {
-		if _, err := os.Stat(p.Path); err != nil {
-			continue
+		if fi, err := os.Stat(p.Path); err != nil || fi.IsDir() {
+			continue // gone, or a folder listing from an older session
 		}
 		e.open(p.Path)
 		if e.path == filepath.Clean(p.Path) {

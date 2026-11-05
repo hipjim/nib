@@ -27,6 +27,7 @@ type hit struct {
 	path string // slash-separated, relative to root
 	line int
 	col  int    // byte offset of the match in text
+	n    int    // length of the match
 	at   int    // and in the line
 	text string // the line, or the part of a long one around the match
 	cut  bool   // text starts inside the line
@@ -36,6 +37,8 @@ type hit struct {
 // the background, one hit per matching line.
 type grep struct {
 	root, query string
+	opts        findOpts
+	err         error // the query does not compile
 	hits        []hit
 	files       int // files with hits
 	searched    *atomic.Int64
@@ -109,12 +112,19 @@ func (g *grep) start(root, q string) {
 	g.root, g.query = root, q
 	g.hits, g.files, g.sel, g.top = nil, 0, 0, 0
 	g.results, g.stop, g.searched = nil, nil, new(atomic.Int64)
+	g.err = nil
 	if q == "" || strings.Contains(q, "\n") {
 		return
 	}
+	var p *pattern
+	if g.opts != (findOpts{}) {
+		if p, g.err = compilePattern(q, g.opts); g.err != nil {
+			return
+		}
+	}
 	g.stop = new(atomic.Bool)
 	g.results = make(chan []hit, 64)
-	go search(root, q, g.list, g.results, g.stop, g.searched)
+	go search(root, q, p, g.list, g.results, g.stop, g.searched)
 }
 
 // poll takes in new hits, keeping them in file and line order and the
@@ -156,10 +166,18 @@ loop:
 	return changed, g.results != nil
 }
 
-func search(root, q string, files *fileList, res chan<- []hit, stop *atomic.Bool, searched *atomic.Int64) {
+func search(root, q string, p *pattern, files *fileList, res chan<- []hit, stop *atomic.Bool, searched *atomic.Int64) {
 	defer close(res)
 	index := matcher(q)
 	byLine := !isASCII(q) && strings.ToLower(q) == q // folding may change offsets
+	scan := func(s, rel string, line *int, hits []hit) []hit {
+		return scanChunk(s, rel, index, len(q), byLine, line, hits)
+	}
+	if p != nil {
+		scan = func(s, rel string, line *int, hits []hit) []hit {
+			return scanPattern(s, rel, p, line, hits)
+		}
+	}
 	work := make(chan string, 256)
 	var total atomic.Int64
 	var wg sync.WaitGroup
@@ -172,7 +190,7 @@ func search(root, q string, files *fileList, res chan<- []hit, stop *atomic.Bool
 				if stop.Load() || total.Load() >= maxHits {
 					continue
 				}
-				hs := grepFile(filepath.Join(root, filepath.FromSlash(rel)), rel, index, len(q), byLine, &buf, stop)
+				hs := readChunks(filepath.Join(root, filepath.FromSlash(rel)), rel, scan, &buf, stop)
 				searched.Add(1)
 				if len(hs) > 0 {
 					total.Add(int64(len(hs)))
@@ -197,6 +215,13 @@ func search(root, q string, files *fileList, res chan<- []hit, stop *atomic.Bool
 // take little memory. Files with a NUL byte near the start are binary and
 // skipped.
 func grepFile(name, rel string, index func(string) int, qlen int, byLine bool, buf *[]byte, stop *atomic.Bool) []hit {
+	return readChunks(name, rel, func(s, rel string, line *int, hits []hit) []hit {
+		return scanChunk(s, rel, index, qlen, byLine, line, hits)
+	}, buf, stop)
+}
+
+// readChunks reads a file a buffer of whole lines at a time for scan.
+func readChunks(name, rel string, scan func(s, rel string, line *int, hits []hit) []hit, buf *[]byte, stop *atomic.Bool) []hit {
 	f, err := os.Open(name)
 	if err != nil {
 		return nil
@@ -228,7 +253,7 @@ func grepFile(name, rel string, index func(string) int, qlen int, byLine bool, b
 		}
 		if cut > 0 {
 			s := unsafe.String(&data[0], cut)
-			hits = scanChunk(s, rel, index, qlen, byLine, &line, hits)
+			hits = scan(s, rel, &line, hits)
 		}
 		if eof {
 			break
@@ -277,6 +302,40 @@ func scanChunk(s, rel string, index func(string) int, qlen int, byLine bool, lin
 	return hits
 }
 
+// scanPattern is scanChunk for a pattern, which tests one line at a time and
+// jumps between hits of its literal when it has one.
+func scanPattern(s, rel string, p *pattern, line *int, hits []hit) []hit {
+	counted := 0
+	for o := 0; o < len(s) && len(hits) < maxFileHits; {
+		at := o
+		if p.lit != nil {
+			m := p.lit(s[o:])
+			if m < 0 {
+				break
+			}
+			at = o + m
+		}
+		*line += strings.Count(s[counted:at], "\n")
+		counted = at
+		ls := strings.LastIndexByte(s[:at], '\n') + 1
+		le := strings.IndexByte(s[at:], '\n')
+		if le < 0 {
+			le = len(s)
+		} else {
+			le += at
+		}
+		text := strings.TrimSuffix(s[ls:le], "\r")
+		if len(text) <= maxPatternLine {
+			if a, b, ok := p.first(text, 0); ok {
+				hits = append(hits, newHit(rel, *line, text, a, b-a))
+			}
+		}
+		o = le + 1
+	}
+	*line += strings.Count(s[counted:], "\n")
+	return hits
+}
+
 func newHit(rel string, line int, text string, col, qlen int) hit {
 	text = strings.TrimSuffix(text, "\r")
 	start, end := 0, len(text)
@@ -292,7 +351,7 @@ func newHit(rel string, line int, text string, col, qlen int) hit {
 			end--
 		}
 	}
-	return hit{path: rel, line: line, col: col - start, at: col, text: strings.Clone(text[start:end]), cut: start > 0}
+	return hit{path: rel, line: line, col: col - start, n: qlen, at: col, text: strings.Clone(text[start:end]), cut: start > 0}
 }
 
 func isASCII(s string) bool {

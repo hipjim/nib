@@ -115,6 +115,17 @@ first, so `⌘P`, `Enter` switches back to the last one.
 
 A lower-case query ignores case; one with a capital letter matches exactly.
 
+While finding, replacing or searching, **`⌘⇧R`** turns on regular expressions
+(`.*` shows in the prompt, and the replacement can use `$1`, or `${1}x` when a
+letter follows), **`⌘⇧C`** exact case and **`⌘⇧W`** whole words. A regular
+expression tests one line at a time, and a long search goes on in the
+background while you keep typing. Lines over 16 MB are skipped, and the status
+bar says when that happened.
+
+- **`⌘⇧G`** lists the lines of the open file that match, as you type, even in
+  a file of millions of lines. `Enter` goes to the line, and `F3` goes on from
+  there. The list keeps the first 10,000.
+
 ### Folders, the file finder and file properties
 
 <p align="center">
@@ -153,6 +164,12 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 
 - Quitting or closing the window with unsaved files asks first; quit again to
   discard them.
+- Unsaved changes survive a crash, a power cut or a killed process, in saved
+  files and in scratch buffers alike: within seconds of an edit they are on
+  disk, and the next start brings them back, with undo. A big file is kept as
+  its edits since the last save, so one edit never copies the file. If it has
+  changed on disk since, those edits stay in the recovery folder and nib says
+  so; a file under 1 MB is kept whole and comes back regardless.
 - `nib` with no arguments reopens your last files where you left them. A
   restored file you do not touch for two sessions in a row is dropped, so a
   file opened once by accident does not come back forever.
@@ -169,6 +186,8 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 | `⌘S` / `⌘⇧S` | save / save as |
 | `⌘P` or `⇧⇧` | find a file in the folder (`↑` / `↓` pick, `Enter` opens) |
 | `⌘⇧P` | run any command by name (`↑` / `↓` pick, `Enter` runs) |
+| `⌘⇧G` | list the lines of this file that match (`↑` / `↓` pick, `Enter` goes there) |
+| `⌘⇧R` / `⌘⇧C` / `⌘⇧W` | while finding: regular expression / exact case / whole word |
 | `⌘O` / `⌘⇧O` | browse the file's folder / open a path (`Tab` completes) |
 | `⌘E` | show the current file's folder |
 | `⌘I` / `⌘⇧I` | file properties / show spaces and tabs |

@@ -116,6 +116,9 @@ func (b *Buffer) Save(path string) error {
 		return err
 	}
 	b.saved = b.state()
+	if n := len(b.undo); n > 0 {
+		b.undo[n-1].at = time.Time{} // later typing starts a new step, past the saved one
+	}
 	return nil
 }
 
@@ -316,12 +319,17 @@ func (b *Buffer) ReplaceAll(q, r string, cursor Pos) int {
 	for _, c := range counts {
 		n += c
 	}
+	b.commitLines(changes, cursor)
+	return n
+}
+
+// commitLines applies a whole-file change as one undo step.
+func (b *Buffer) commitLines(changes []lineEdit, cursor Pos) {
 	b.setLines(changes, true)
 	b.redo = b.redo[:0]
 	b.nextID++
 	// A zero time keeps the next typing from merging into this step.
 	b.undo = append(b.undo, edit{lines: changes, before: cursor, after: cursor, id: b.nextID})
-	return n
 }
 
 // setLines puts the new (or, undoing, the old) text of each changed line.

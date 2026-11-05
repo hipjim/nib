@@ -43,9 +43,10 @@ const (
 	promptWith
 	promptGrep
 	promptPalette
+	promptFilter
 )
 
-var promptLabels = [...]string{"", "find", "goto line", "open", "save as", "file", "replace", "with", "search folder", "command"}
+var promptLabels = [...]string{"", "find", "goto line", "open", "save as", "file", "replace", "with", "search folder", "command", "filter"}
 
 const blinkPeriod = 530 * time.Millisecond
 
@@ -60,13 +61,31 @@ type Editor struct {
 	finder  finder
 	grep    grep
 	palette commandList
-	plain   bool    // syntax highlighting turned off
-	light   bool    // light theme
-	showWS  bool    // spaces and tabs drawn as · and →
-	info    bool    // file properties panel shown
-	keys    bool    // key reference panel shown
-	keysY   float64 // keys: pixels scrolled when the rows do not fit
-	count   matchCount
+	filter  lineFilter
+	recover recoverer
+	opts    findOpts // find modes: regular expression, exact case, whole word
+	search  *patternSearch
+	pcount  *patternCount
+
+	// The compiled pattern, and what the status bar last worked out from
+	// the count, which only changes when the selection or count does.
+	pat      *pattern
+	patErr   error
+	patQ     string
+	patOpts  findOpts
+	pcAt     Pos
+	pcEnd    Pos
+	pcNext   int
+	pcBefore int
+	pcIs     bool
+
+	plain  bool    // syntax highlighting turned off
+	light  bool    // light theme
+	showWS bool    // spaces and tabs drawn as · and →
+	info   bool    // file properties panel shown
+	keys   bool    // key reference panel shown
+	keysY  float64 // keys: pixels scrolled when the rows do not fit
+	count  matchCount
 
 	nextOpen  int  // tabs: opening order of the last document opened
 	tabScroll int  // tabs: pixels scrolled when they do not fit
@@ -155,6 +174,7 @@ func (e *Editor) save(path string) {
 		e.hl = newHighlighter(path)
 	}
 	e.path, e.stamp, e.conflict = path, statStamp(path), false
+	e.base = e.stamp
 	e.flash("wrote "+plural(int64(e.buf.LineCount()), "line"), false)
 }
 
@@ -524,7 +544,11 @@ func (e *Editor) setInput(s string) {
 	case promptWith:
 		e.replaceBy = s
 	case promptGrep:
+		e.grep.opts = e.opts
 		e.grep.start(e.root, s)
+	case promptFilter:
+		e.filter.start(e.buf, s, e.opts)
+		e.filter.step()
 	case promptFiles:
 		e.finder.query, e.finder.sel = s, 0
 		e.finder.rank()
@@ -537,7 +561,11 @@ func (e *Editor) setInput(s string) {
 func (e *Editor) find(from Pos, backward bool) {
 	q := e.findQuery
 	if q == "" {
-		e.notFound = false
+		e.notFound, e.search = false, nil
+		return
+	}
+	if e.opts != (findOpts{}) {
+		e.findPattern(from, backward)
 		return
 	}
 	p, ok := e.buf.Find(q, from, backward)
@@ -603,17 +631,20 @@ func (e *Editor) submitPrompt() {
 			e.prompt = promptNone
 			e.openHit(g.root, g.query, g.hits[g.sel])
 		}
+	case promptFilter:
+		e.prompt = promptFilter
+		e.pickFilter()
 	}
 }
 
 func (e *Editor) openReplace() {
 	q := e.findQuery
 	if a, b, ok := e.sel(); ok && a.Line == b.Line {
-		q = e.buf.Text(a, b)
+		q = e.asQuery(e.buf.Text(a, b))
 	}
 	e.openPrompt(promptReplace, q)
 	e.findQuery = q
-	if a, _, ok := e.sel(); !ok || e.buf.Text(a, endOf(a, q)) != q {
+	if a, b, ok := e.sel(); !ok || e.opts != (findOpts{}) && !e.isMatch(a, b) || e.opts == (findOpts{}) && e.buf.Text(a, endOf(a, q)) != q {
 		e.find(e.findOrigin, false)
 	}
 }
@@ -622,6 +653,11 @@ func (e *Editor) isMatch(a, b Pos) bool {
 	q := e.findQuery
 	if q == "" || a.Line != b.Line {
 		return false
+	}
+	if p, err := e.pattern(); err != nil {
+		return false
+	} else if p != nil {
+		return p.isMatch(e.buf.Line(a.Line), a.Col, b.Col)
 	}
 	t := e.buf.Text(a, b)
 	return len(t) == len(q) && matcher(q)(t) == 0
@@ -632,7 +668,11 @@ func (e *Editor) replaceNext() {
 		return
 	}
 	if a, b, ok := e.sel(); ok && e.isMatch(a, b) {
-		e.moveTo(e.buf.Replace(a, b, e.replaceBy, e.cursor), false)
+		with := e.replaceBy
+		if p, _ := e.pattern(); p != nil {
+			with = p.replaceOne(e.buf.Line(a.Line), a.Col, b.Col, with)
+		}
+		e.moveTo(e.buf.Replace(a, b, with, e.cursor), false)
 	}
 	e.find(e.cursor, false)
 }
@@ -642,7 +682,16 @@ func (e *Editor) replaceAll() {
 		return
 	}
 	t0 := time.Now()
-	n := e.buf.ReplaceAll(e.findQuery, e.replaceBy, e.cursor)
+	var n int
+	p, err := e.pattern()
+	switch {
+	case err != nil:
+	case p != nil:
+		e.search = nil
+		n = e.buf.ReplaceAllPattern(p, e.replaceBy, e.cursor)
+	default:
+		n = e.buf.ReplaceAll(e.findQuery, e.replaceBy, e.cursor)
+	}
 	e.prompt = promptNone
 	c := e.buf.Clamp(e.cursor)
 	for l := e.buf.Line(c.Line); c.Col > 0 && c.Col < len(l) && !utf8.RuneStart(l[c.Col]); {
@@ -663,10 +712,11 @@ func (e *Editor) replaceAll() {
 func (e *Editor) openGrep() {
 	q := e.grep.query
 	if a, b, ok := e.sel(); ok && a.Line == b.Line {
-		q = e.buf.Text(a, b)
+		q = e.asQuery(e.buf.Text(a, b))
 	}
 	e.openPrompt(promptGrep, q)
-	if g := &e.grep; q != g.query || e.root != g.root || g.stop == nil {
+	if g := &e.grep; q != g.query || e.root != g.root || g.stop == nil || g.opts != e.opts {
+		g.opts = e.opts
 		g.start(e.root, q)
 	}
 }
@@ -680,7 +730,7 @@ func (e *Editor) openHit(root, q string, h hit) {
 		return
 	}
 	e.findQuery = q
-	e.pending = &place{Line: h.line, Col: h.at, Select: len(q)}
+	e.pending = &place{Line: h.line, Col: h.at, Select: h.n}
 	e.applyPending()
 }
 
@@ -811,7 +861,7 @@ func (e *Editor) pointer(gtx layout.Context, ev pointer.Event) {
 		if !ev.Buttons.Contain(pointer.ButtonPrimary) {
 			return
 		}
-		if e.prompt == promptFiles || e.prompt == promptGrep || e.prompt == promptPalette || e.keys {
+		if e.prompt == promptFiles || e.prompt == promptGrep || e.prompt == promptPalette || e.prompt == promptFilter || e.keys {
 			// The panel covers the text; a click puts it away.
 			e.prompt, e.keys = promptNone, false
 			return
@@ -961,16 +1011,25 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 			}
 			q := e.findQuery
 			if a, b, ok := e.sel(); ok && a.Line == b.Line {
-				q = e.buf.Text(a, b)
+				q = e.asQuery(e.buf.Text(a, b))
 			}
 			e.openPrompt(promptFind, q)
 			e.findQuery = q
 		case "R":
-			e.openReplace()
+			if shift {
+				e.toggleFind(toggleRegex)
+				e.flash("regular expressions "+map[bool]string{false: "off", true: "on"}[e.opts.regex], false)
+			} else {
+				e.openReplace()
+			}
 		case "T":
 			e.openTerminal()
 		case "G":
-			e.openPrompt(promptGoto, "")
+			if shift {
+				e.openFilter()
+			} else {
+				e.openPrompt(promptGoto, "")
+			}
 		case "D":
 			if shift {
 				e.duplicateLines()
@@ -1131,9 +1190,24 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 // promptKey handles a key while the prompt is open. It returns false to let
 // the editor handle the key instead.
 func (e *Editor) promptKey(gtx layout.Context, k key.Event) bool {
+	if k.Modifiers.Contain(key.ModShortcut) && k.Modifiers.Contain(key.ModShift) &&
+		(e.prompt == promptFind || e.prompt == promptReplace || e.prompt == promptGrep || e.prompt == promptFilter) {
+		switch k.Name {
+		case "R":
+			e.toggleFind(toggleRegex)
+			return true
+		case "C":
+			e.toggleFind(toggleExact)
+			return true
+		case "W":
+			e.toggleFind(toggleWord)
+			return true
+		}
+	}
 	switch k.Name {
 	case key.NameEscape:
 		e.prompt = promptNone
+		e.search = nil
 	case key.NameReturn, key.NameEnter:
 		switch {
 		case (e.prompt == promptFind || e.prompt == promptReplace) && k.Modifiers.Contain(key.ModShift):
@@ -1160,6 +1234,13 @@ func (e *Editor) promptKey(gtx layout.Context, k key.Event) bool {
 			}
 			g.sel = max(0, min(g.sel+d, len(g.hits)-1))
 		}
+		if f := &e.filter; e.prompt == promptFilter {
+			d := e.grepRows()
+			if k.Name == key.NamePageUp {
+				d = -d
+			}
+			f.sel = max(0, min(f.sel+d, len(f.hits)-1))
+		}
 		if p := &e.palette; e.prompt == promptPalette {
 			d := -e.paletteRows()
 			if k.Name == key.NamePageUp {
@@ -1173,6 +1254,14 @@ func (e *Editor) promptKey(gtx layout.Context, k key.Event) bool {
 				g.sel = max(g.sel-1, 0)
 			} else {
 				g.sel = max(0, min(g.sel+1, len(g.hits)-1))
+			}
+			return true
+		}
+		if f := &e.filter; e.prompt == promptFilter {
+			if k.Name == key.NameUpArrow {
+				f.sel = max(f.sel-1, 0)
+			} else {
+				f.sel = max(0, min(f.sel+1, len(f.hits)-1))
 			}
 			return true
 		}
@@ -1349,6 +1438,13 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	}
 	e.events(gtx)
 	e.applyPending()
+	e.stepSearch()
+	if e.prompt == promptFilter {
+		if f := &e.filter; f.buf != e.buf || f.version != e.buf.version {
+			f.start(e.buf, f.q, e.opts)
+		}
+		e.filter.step()
+	}
 	e.cursor, e.anchor = e.buf.Clamp(e.cursor), e.buf.Clamp(e.anchor)
 	e.updateTitle()
 
@@ -1385,6 +1481,8 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 		e.drawGrep(gtx, size.X, textH)
 	} else if e.prompt == promptPalette {
 		e.drawPalette(gtx, size.X, textH)
+	} else if e.prompt == promptFilter {
+		e.drawFilter(gtx, size.X, textH)
 	} else if e.keys {
 		e.drawKeys(gtx, size.X, textH)
 	} else if e.info {
@@ -1392,11 +1490,17 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 	}
 
 	e.drawStatus(gtx, image.Rect(0, textH, size.X, textH+statusH))
+	if e.findBusy() {
+		gtx.Execute(op.InvalidateCmd{})
+	}
 
 	quitOK.Store(e.unsaved() == 0 || e.quitArmed)
 	e.watch.sync(e.docs)
 	if e.saveSession(false) {
 		gtx.Execute(op.InvalidateCmd{At: e.sessionAt.Add(time.Second)})
+	}
+	if e.saveRecovery(false) {
+		gtx.Execute(op.InvalidateCmd{At: e.recover.at.Add(max(recoverEvery, time.Duration(e.recover.every.Load())))})
 	}
 	return layout.Dimensions{Size: size}
 }
@@ -1463,8 +1567,15 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 		q = e.findQuery
 	}
 	var index func(string) int
+	var pat *pattern
 	if q != "" {
-		index = matcher(q)
+		if p, err := e.pattern(); err != nil {
+			q = ""
+		} else if p != nil {
+			pat, q = p, ""
+		} else {
+			index = matcher(q)
+		}
 	}
 
 	if l, ok := e.buf.TakeEdited(); ok {
@@ -1491,6 +1602,19 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 			}
 		}
 
+		if pat != nil {
+			lo, hi := 0, len(line)
+			if len(line) >= longLine {
+				lo = e.buf.ColAt(i, float32(v0))
+				hi = e.buf.ColAt(i, float32(v1))
+			}
+			for _, loc := range pat.re.FindAllStringIndex(line[lo:hi], -1) {
+				if loc[1] > loc[0] {
+					x0, x1 := xOf(e.buf.VisCol(i, lo+loc[0])), xOf(e.buf.VisCol(i, lo+loc[1]))
+					fill(gtx, image.Rect(x0, y, x1, y+lh), colMatch)
+				}
+			}
+		}
 		if q != "" {
 			// Only the visible part of a long line is searched.
 			lo, hi := 0, len(line)
@@ -1653,9 +1777,15 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 	if p := &e.palette; e.prompt == promptPalette {
 		right = plural(int64(len(p.results)), "command")
 	}
+	if e.prompt == promptFilter {
+		right = e.filterStatus()
+	}
+	if g := &e.grep; e.prompt == promptGrep && g.err != nil {
+		right = patternError(g.err)
+	}
 	if s := e.matchCountText(); s != "" {
 		right = s + "  " + right
-	} else if a, b, ok := e.sel(); ok && e.prompt != promptFiles && e.prompt != promptGrep && e.prompt != promptWith && e.prompt != promptPalette {
+	} else if a, b, ok := e.sel(); ok && e.prompt != promptFiles && e.prompt != promptGrep && e.prompt != promptWith && e.prompt != promptPalette && e.prompt != promptFilter {
 		if a.Line == b.Line {
 			right = fmt.Sprintf("(%d sel)  ", utf8.RuneCountInString(e.buf.Text(a, b))) + right
 		} else {
@@ -1663,11 +1793,20 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 		}
 	}
 	rx := r.Max.X - pad - int(float32(utf8.RuneCountInString(right))*cw)
+	if _, err := e.pattern(); err != nil && (e.prompt == promptFind || e.prompt == promptReplace || e.prompt == promptWith) {
+		// The reason matters more than the position, which gives way.
+		right = patternError(err)
+		rx = r.Max.X - pad - int(float32(utf8.RuneCountInString(right))*cw)
+	}
 	e.label(gtx, rx, y, right, colInfo)
 
 	x := r.Min.X + pad
 	if e.prompt != promptNone {
 		lbl := promptLabels[e.prompt] + " ›"
+		switch e.prompt {
+		case promptFind, promptReplace, promptGrep, promptFilter:
+			lbl = promptLabels[e.prompt] + e.opts.label() + " ›"
+		}
 		if e.prompt == promptFiles {
 			lbl = "file in " + folderName(e.finder.root) + " ›"
 		}
@@ -1675,13 +1814,13 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 			lbl = "replace " + truncLeft(e.findQuery, 30) + " with ›"
 		}
 		c := colAccent
-		if e.notFound {
+		if e.notFound || e.prompt == promptFilter && e.filter.err != nil || e.prompt == promptGrep && e.grep.err != nil {
 			c = colWarn
 		}
 		e.label(gtx, x, y, lbl, c)
 		x += int(float32(utf8.RuneCountInString(lbl)+1) * cw)
 		// A long input keeps its end, where the cursor is, in view.
-		in := truncLeft(e.input, int(float32(rx-x)/cw)-2)
+		in := truncLeft(e.input, max(2, int(float32(rx-x)/cw)-2))
 		e.label(gtx, x, y, in, colText)
 		cx := x + int(float32(utf8.RuneCountInString(in))*cw)
 		fill(gtx, image.Rect(cx, y+gtx.Dp(2), cx+gtx.Dp(2), y+e.lineH-gtx.Dp(2)), colAccent)

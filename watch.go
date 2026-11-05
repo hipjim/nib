@@ -109,5 +109,6 @@ func (e *Editor) reload(d *doc) {
 	atEnd := d.cursor.Line >= d.buf.LineCount()-1
 	d.pending = &place{Line: d.cursor.Line, Col: d.cursor.Col, Scroll: d.scrollY, End: atEnd}
 	d.buf, d.hl, d.conflict = b, newHighlighter(d.path), false
+	d.base = statStamp(d.path)
 	d.anchor = d.cursor
 }

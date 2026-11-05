@@ -24,6 +24,9 @@ type doc struct {
 	scrollX  float32
 	dir      *dirView        // set for a folder listing
 	stamp    stamp           // the file on disk when last read or written
+	base     stamp           // the file that unsaved edits apply to
+	recName  string          // its file in the recovery folder
+	recVer   int             // the buffer version last written there
 	conflict bool            // changed on disk while edited here
 	pending  *place          // cursor to restore once loading finishes
 	opened   int             // order of opening, for the tab bar
@@ -101,6 +104,7 @@ func (e *Editor) open(path string) {
 		e.flash(openedMsg(b.LineCount(), time.Since(t0)), false)
 	}
 	d.stamp = statStamp(path)
+	d.base = d.stamp
 	e.show(d)
 }
 

@@ -29,6 +29,11 @@ func (e *Editor) matchCountText() string {
 	if !ok {
 		a = e.cursor
 	}
+	if p, err := e.pattern(); err != nil {
+		return patternError(err)
+	} else if p != nil {
+		return e.patternCountText(p, a, b, ok)
+	}
 	c := &e.count
 	if c.buf != e.buf || c.q != e.findQuery || c.version != e.buf.version || c.at != a {
 		c.buf, c.q, c.version, c.at = e.buf, e.findQuery, e.buf.version, a

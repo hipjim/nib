@@ -96,6 +96,7 @@ func run(w *app.Window, path string) error {
 			ed.restoreSession()
 		} else {
 			ed.keepSession()
+			ed.restoreRecovery() // unsaved work is not hidden until a later start
 		}
 		ed.WarmUp()
 		ready <- ed
@@ -122,6 +123,7 @@ func run(w *app.Window, path string) error {
 			}
 		case app.DestroyEvent:
 			editor().saveSession(true)
+			editor().clearRecovery()
 			return e.Err
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, e)

@@ -88,6 +88,23 @@ func TestSessionRestore(t *testing.T) {
 	if len(e.docs) != 2 || e.path != c {
 		t.Fatalf("after delete: %d docs, top %s", len(e.docs), e.path)
 	}
+
+	// A folder listing is not kept, and one left over from an older
+	// session is not restored: nib starts on its start screen instead.
+	e = NewEditor(dir)
+	e.sessionPath = sess
+	e.saveSession(true)
+	s, _ = readSession(sess)
+	if len(s.Docs) != 0 {
+		t.Fatalf("session kept a folder: %v", s.Docs)
+	}
+	writeFile(t, sess, `{"docs":[{"path":"`+dir+`"}]}`)
+	e = NewEditor("")
+	e.sessionPath = sess
+	e.restoreSession()
+	if len(e.docs) != 1 || e.path != "" || e.dir != nil {
+		t.Fatalf("restored a folder: %d docs, top %q", len(e.docs), e.path)
+	}
 }
 
 // touch makes sure the next write gets a new modification time.

@@ -26,7 +26,8 @@ import (
 // NIB_GREP=query the folder search and NIB_REPLACE=old:new the replace
 // prompt, NIB_KEYS=1 the key reference (NIB_KEYS=end scrolled to its end), NIB_TABS=a,b opens more files (NIB_TABX=1
 // hovers the first tab's ×) and NIB_FILE=- an empty scratch buffer. NIB_LIGHT=1
-// uses the light theme and NIB_WS=1 shows whitespace.
+// uses the light theme and NIB_WS=1 shows whitespace. NIB_RX=1 turns on regular
+// expressions and NIB_FILTER=query opens the line filter.
 func TestRender(t *testing.T) {
 	out := os.Getenv("NIB_SHOT")
 	if out == "" {
@@ -54,6 +55,8 @@ var goldenScenes = []struct {
 	{"keys-end", map[string]string{"NIB_KEYS": "end"}},
 	{"palette", map[string]string{"NIB_PALETTE": "line"}},
 	{"find", map[string]string{"NIB_FIND": "func"}},
+	{"find-regex", map[string]string{"NIB_FIND": `Shape\d+`, "NIB_RX": "1"}},
+	{"filter", map[string]string{"NIB_FILTER": "return"}},
 	{"replace", map[string]string{"NIB_REPLACE": "func:fn"}},
 }
 
@@ -196,6 +199,16 @@ func renderScene(t *testing.T, lookup func(string) (string, bool)) *image.RGBA {
 		e.keys = true
 		if v == "end" {
 			e.keysY = 1 << 30
+		}
+		ops.Reset()
+		e.Layout(gtx)
+	}
+	e.opts.regex = get("NIB_RX") != ""
+	if q := get("NIB_FILTER"); q != "" {
+		e.openFilter()
+		e.setInput(q)
+		for e.filter.busy() {
+			e.filter.step()
 		}
 		ops.Reset()
 		e.Layout(gtx)

@@ -122,7 +122,8 @@ these settings:
 | `NIB_FINDER=query` | the file finder |
 | `NIB_PALETTE=query` | the command palette |
 | `NIB_GREP=query` | the folder search |
-| `NIB_FIND=text` / `NIB_REPLACE=old:new` | the find or replace prompt |
+| `NIB_FIND=text` / `NIB_REPLACE=old:new` | the find or replace prompt; `NIB_RX=1` makes them regular expressions |
+| `NIB_FILTER=query` | the line filter |
 | `NIB_KEYS=1` / `NIB_INFO=1` | the key reference (`NIB_KEYS=end` scrolled to its end) / file properties |
 | `NIB_LIGHT=1` / `NIB_WS=1` | the light theme / whitespace shown |
 

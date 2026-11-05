@@ -142,6 +142,7 @@ func (e *Editor) drawHint(gtx layout.Context, width, height int) {
 		{shortcutName + "O", "browse the folder"},
 		{shortcutName + "P", "find a file in the folder"},
 		{shortcutName + shiftName + "F", "search the folder"},
+		{shortcutName + shiftName + "P", "run any command by name"},
 		{shortcutName + shiftName + "/", "all the keys"},
 	}
 	keyW, descW := 0, 0
@@ -213,6 +214,8 @@ func keyRows() [][2]string {
 		{"⌘1 … ⌘9", "go to that tab"},
 		{"⌘Q", "quit"},
 		{"⌘F, then Enter / ⇧Enter / F3", "find next / previous"},
+		{"⌘⇧R / ⌘⇧C / ⌘⇧W, while finding", "regular expression / exact case / whole word"},
+		{"⌘⇧G", "list the lines of this file that match"},
 		{"⌘R, then Enter / ⌘Enter / ↓", "replace this match / all of them / skip"},
 		{"⌘G", "go to line[:col]"},
 		{"⌘Z / ⌘⇧Z / ⌘Y", "undo / redo"},
@@ -383,43 +386,65 @@ func (e *Editor) grepRows() int { return max(1, e.viewH*6/10/max(1, e.lineH)) }
 
 func (e *Editor) drawGrep(gtx layout.Context, width, bottom int) {
 	g := &e.grep
+	msg := "no matches"
+	switch {
+	case g.query == "":
+		msg = "type to search the files in " + shortPath(e.root)
+	case g.results != nil:
+		msg = "searching…"
+	case g.err != nil:
+		msg = patternError(g.err)
+	}
+	e.drawHits(gtx, width, bottom, g.hits, &g.sel, &g.top, msg, func(h hit) string { return fmt.Sprintf("%s:%d", h.path, h.line+1) })
+}
+
+func (e *Editor) drawFilter(gtx layout.Context, width, bottom int) {
+	f := &e.filter
+	msg := "no matching lines"
+	switch {
+	case f.q == "":
+		msg = "type to list the lines of this file that match"
+	case f.busy():
+		msg = "searching…"
+	case f.err != nil:
+		msg = patternError(f.err)
+	}
+	e.drawHits(gtx, width, bottom, f.hits, &f.sel, &f.top, msg, func(h hit) string { return strconv.Itoa(h.line + 1) })
+}
+
+// drawHits lists matching lines above the prompt, each with its place and
+// the match in the accent color.
+func (e *Editor) drawHits(gtx layout.Context, width, bottom int, hits []hit, sel, topRow *int, empty string, place func(hit) string) {
 	lh := e.lineH
-	rows := min(max(1, len(g.hits)), e.grepRows())
+	rows := min(max(1, len(hits)), e.grepRows())
 	top := bottom - rows*lh - gtx.Dp(8)
 	e.panel(gtx, image.Rect(-1, top, width+1, bottom+1))
 	pad := gtx.Dp(12)
-	if len(g.hits) == 0 {
-		msg := "no matches"
-		switch {
-		case g.query == "":
-			msg = "type to search the files in " + shortPath(e.root)
-		case g.results != nil:
-			msg = "searching…"
-		}
-		e.label(gtx, pad, top+gtx.Dp(4), msg, colInfo)
+	if len(hits) == 0 {
+		e.label(gtx, pad, top+gtx.Dp(4), empty, colInfo)
 		return
 	}
-	g.top = min(g.top, g.sel)
-	if g.sel >= g.top+rows {
-		g.top = g.sel - rows + 1
+	*topRow = min(*topRow, *sel)
+	if *sel >= *topRow+rows {
+		*topRow = *sel - rows + 1
 	}
-	g.top = max(0, min(g.top, len(g.hits)-rows))
+	*topRow = max(0, min(*topRow, len(hits)-rows))
 	cols := int(float32(width-2*pad) / e.charW)
 	pw := 0
-	for _, h := range g.hits[g.top : g.top+rows] {
-		pw = max(pw, utf8.RuneCountInString(h.path)+1+len(strconv.Itoa(h.line+1)))
+	for _, h := range hits[*topRow : *topRow+rows] {
+		pw = max(pw, utf8.RuneCountInString(place(h)))
 	}
 	pw = min(pw, cols/3)
 	room := cols - pw - 2
-	q := len(g.query)
-	for i, h := range g.hits[g.top : g.top+rows] {
+	for i, h := range hits[*topRow : *topRow+rows] {
 		y := top + gtx.Dp(4) + i*lh
-		if g.top+i == g.sel {
+		if *topRow+i == *sel {
 			fill(gtx, image.Rect(0, y, width, y+lh), colSel)
 			fill(gtx, image.Rect(0, y, gtx.Dp(3), y+lh), colAccent)
 		}
-		e.label(gtx, pad, y, truncLeft(fmt.Sprintf("%s:%d", h.path, h.line+1), pw), colInfo)
+		e.label(gtx, pad, y, truncLeft(place(h), pw), colInfo)
 
+		q := h.n
 		text, col, cut := h.text, h.col, h.cut
 		lead := min(col, len(text)-len(strings.TrimLeft(text, " \t")))
 		text, col = text[lead:], col-lead
