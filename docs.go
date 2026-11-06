@@ -34,6 +34,7 @@ type doc struct {
 	idle     int             // sessions in a row restored but not used
 	loadAt   time.Time       // when a file still being indexed was opened
 	closeR   image.Rectangle // the tab's ×, where it was last drawn
+	tail     *tailState      // set while following the end of the file
 }
 
 func openedMsg(lines int, d time.Duration) string {

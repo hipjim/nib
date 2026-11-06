@@ -8,6 +8,7 @@ package main
 import (
 	"errors"
 	"regexp/syntax"
+	"sort"
 	"sync/atomic"
 )
 
@@ -17,6 +18,10 @@ type lineFilter struct {
 	err      error
 	buf      *Buffer
 	version  int
+	appends  int     // of buf at the last look, to tell lines arriving from edits
+	count    int     // lines of buf at the last look
+	tail     bool    // the file is growing: keep the latest lines, not the first
+	pinned   bool    // the pick was not on the last line before grew searched again
 	results  [][]hit // by chunk, until merged into hits in file order
 	merged   int     // chunks already in hits
 	next     atomic.Int64
@@ -25,7 +30,7 @@ type lineFilter struct {
 }
 
 func (f *lineFilter) start(b *Buffer, q string, o findOpts) {
-	f.q, f.buf, f.version = q, b, b.version
+	f.q, f.buf, f.version, f.appends, f.count = q, b, b.version, b.appends, b.LineCount()
 	f.p, f.err, f.hits, f.results = nil, nil, nil, nil
 	f.merged, f.sel, f.top = 0, 0, 0
 	f.next.Store(0)
@@ -38,7 +43,23 @@ func (f *lineFilter) start(b *Buffer, q string, o findOpts) {
 	f.results = make([][]hit, (b.LineCount()+patternChunk-1)/patternChunk)
 }
 
-func (f *lineFilter) capped() bool { return len(f.hits) >= maxHits }
+// grew goes on after lines arrived at the end of the file, from the chunk that
+// held the old last line, which may have been written only in part.
+func (f *lineFilter) grew() {
+	c := max(f.count-1, 0) / patternChunk
+	f.version, f.appends, f.count = f.buf.version, f.buf.appends, f.buf.LineCount()
+	if f.p == nil {
+		return
+	}
+	if f.merged > c {
+		f.pinned = f.pinned || f.sel < len(f.hits)-1
+		f.merged = c
+		f.hits = f.hits[:sort.Search(len(f.hits), func(i int) bool { return f.hits[i].line >= c*patternChunk })]
+	}
+	f.next.Store(min(f.next.Load(), int64(c)))
+}
+
+func (f *lineFilter) capped() bool { return !f.tail && len(f.hits) >= maxHits }
 
 func (f *lineFilter) busy() bool {
 	return f.p != nil && f.merged < len(f.results) && !f.capped()
@@ -74,10 +95,26 @@ func (f *lineFilter) step() {
 	}
 	done := min(int(f.next.Load()), n)
 	f.next.Store(int64(done))
+	atEnd := !f.pinned && f.sel >= len(f.hits)-1
 	for ; f.merged < done; f.merged++ {
 		room := max(0, maxHits-len(f.hits))
+		if f.tail {
+			room = len(f.results[f.merged])
+		}
 		f.hits = append(f.hits, f.results[f.merged][:min(room, len(f.results[f.merged]))]...)
 		f.results[f.merged] = nil
+	}
+	if f.tail {
+		if n := len(f.hits) - maxHits; n > 0 {
+			f.hits = f.hits[n:]
+			f.sel = max(0, f.sel-n)
+		}
+		if atEnd {
+			f.sel = max(0, len(f.hits)-1) // the list follows, as the file does
+		}
+	}
+	if f.merged == n {
+		f.pinned = false
 	}
 }
 
@@ -109,6 +146,8 @@ func (e *Editor) filterStatus() string {
 	switch {
 	case f.err != nil:
 		return patternError(f.err)
+	case f.tail && len(f.hits) >= maxHits:
+		return "last " + plural(int64(len(f.hits)), "line")
 	case f.capped():
 		return "first " + plural(int64(len(f.hits)), "line")
 	case f.busy():

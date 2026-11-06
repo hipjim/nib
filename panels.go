@@ -216,6 +216,7 @@ func keyRows() [][2]string {
 		{"⌘F, then Enter / ⇧Enter / F3", "find next / previous"},
 		{"⌘⇧R / ⌘⇧C / ⌘⇧W, while finding", "regular expression / exact case / whole word"},
 		{"⌘⇧G", "list the lines of this file that match"},
+		{"⌘⇧T", "tail the file: follow what is added to it"},
 		{"⌘R, then Enter / ⌘Enter / ↓", "replace this match / all of them / skip"},
 		{"⌘G", "go to line[:col]"},
 		{"⌘Z / ⌘⇧Z / ⌘Y", "undo / redo"},

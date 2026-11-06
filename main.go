@@ -40,6 +40,8 @@ func fontCollection() []font.FontFace {
 // version is set for releases with -ldflags "-X main.version=v1.2.3".
 var version = ""
 
+var tailArg bool // started with -f
+
 func versionString() string {
 	if version != "" {
 		return version
@@ -50,9 +52,10 @@ func versionString() string {
 	return "dev"
 }
 
-const usage = `usage: nib [file or folder]
+const usage = `usage: nib [-f] [file or folder]
 
 With no argument, nib reopens the files of the last session.
+-f follows the file as it grows, like tail -f.
 See https://github.com/hipjim/nib for the keys.
 `
 
@@ -61,6 +64,12 @@ func main() {
 	if len(os.Args) > 1 {
 		path = os.Args[1]
 		switch path {
+		case "-f":
+			if len(os.Args) < 3 {
+				fmt.Print(usage)
+				return
+			}
+			path, tailArg = os.Args[2], true
 		case "-v", "-version", "--version":
 			fmt.Println("nib", versionString())
 			return
@@ -97,6 +106,9 @@ func run(w *app.Window, path string) error {
 		} else {
 			ed.keepSession()
 			ed.restoreRecovery() // unsaved work is not hidden until a later start
+			if tailArg {
+				ed.startTail()
+			}
 		}
 		ed.WarmUp()
 		ready <- ed

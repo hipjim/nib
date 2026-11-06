@@ -27,7 +27,8 @@ import (
 // prompt, NIB_KEYS=1 the key reference (NIB_KEYS=end scrolled to its end), NIB_TABS=a,b opens more files (NIB_TABX=1
 // hovers the first tab's ×) and NIB_FILE=- an empty scratch buffer. NIB_LIGHT=1
 // uses the light theme and NIB_WS=1 shows whitespace. NIB_RX=1 turns on regular
-// expressions and NIB_FILTER=query opens the line filter.
+// expressions, NIB_FILTER=query opens the line filter and NIB_TAIL=1 tails the
+// file (NIB_TAIL=paused scrolled away from its end).
 func TestRender(t *testing.T) {
 	out := os.Getenv("NIB_SHOT")
 	if out == "" {
@@ -57,6 +58,8 @@ var goldenScenes = []struct {
 	{"find", map[string]string{"NIB_FIND": "func"}},
 	{"find-regex", map[string]string{"NIB_FIND": `Shape\d+`, "NIB_RX": "1"}},
 	{"filter", map[string]string{"NIB_FILTER": "return"}},
+	{"tail", map[string]string{"NIB_TAIL": "1"}},
+	{"tail-paused", map[string]string{"NIB_TAIL": "paused"}},
 	{"replace", map[string]string{"NIB_REPLACE": "func:fn"}},
 }
 
@@ -204,6 +207,22 @@ func renderScene(t *testing.T, lookup func(string) (string, bool)) *image.RGBA {
 		e.Layout(gtx)
 	}
 	e.opts.regex = get("NIB_RX") != ""
+	if get("NIB_TAIL") != "" {
+		e.startTail()
+		ops.Reset()
+		e.Layout(gtx)
+		if get("NIB_TAIL") == "paused" {
+			e.scrollY, e.cursor, e.anchor = 0, Pos{}, Pos{}
+			e.tail.fresh = 1234
+			e.msg = ""
+		} else {
+			e.buf.Append("\n2026-11-05 12:00:01 ERROR connection lost\n2026-11-05 12:00:02 WARN retrying\n2026-11-05 12:00:03 INFO connected\n")
+			e.tail.arrivals = []arrival{{e.buf.LineCount() - 4, now}}
+			e.tailEnd(e.doc)
+		}
+		ops.Reset()
+		e.Layout(gtx)
+	}
 	if q := get("NIB_FILTER"); q != "" {
 		e.openFilter()
 		e.setInput(q)

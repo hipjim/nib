@@ -15,8 +15,9 @@ type place struct {
 	Col    int     `json:"col"`
 	Scroll float64 `json:"scroll"`
 	Idle   int     `json:"idle,omitempty"` // sessions restored but not used
-	End    bool    `json:"-"`              // follow the end of the file
-	Select int     `json:"-"`              // select this many bytes from Col
+	Tail   bool    `json:"tail,omitempty"`
+	End    bool    `json:"-"` // follow the end of the file
+	Select int     `json:"-"` // select this many bytes from Col
 }
 
 type session struct {
@@ -62,7 +63,7 @@ func (e *Editor) saveSession(force bool) bool {
 			idle = 0
 		}
 		if d.path != "" && d.dir == nil && idle < maxIdle && len(s.Docs) < maxSession {
-			s.Docs = append(s.Docs, place{Path: d.path, Line: d.cursor.Line, Col: d.cursor.Col, Scroll: d.scrollY, Idle: idle})
+			s.Docs = append(s.Docs, place{Path: d.path, Line: d.cursor.Line, Col: d.cursor.Col, Scroll: d.scrollY, Idle: idle, Tail: d.tail != nil})
 			open[d.path] = true
 		}
 	}
@@ -124,6 +125,9 @@ func (e *Editor) restoreSession() {
 			e.idle = p.Idle
 			e.pending = &p
 			e.applyPending()
+			if p.Tail {
+				e.startTail()
+			}
 		}
 	}
 	e.doc.used = true // the one on screen stays

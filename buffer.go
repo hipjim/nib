@@ -45,6 +45,7 @@ type Buffer struct {
 	undo    []edit
 	redo    []edit
 	version int // bumped on every change
+	appends int // how many of those were lines arriving from disk
 	nextID  int
 	saved   int // state() at last load/save
 	edited  int // first line changed since the last TakeEdited

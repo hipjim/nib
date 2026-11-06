@@ -28,18 +28,22 @@ func statStamp(path string) stamp {
 type watcher struct {
 	mu    sync.Mutex
 	files map[string]stamp
+	fast  bool // a file is being tailed, so look more often
 	hit   atomic.Bool
 }
 
 // sync publishes the files to watch.
 func (w *watcher) sync(docs []*doc) {
 	files := map[string]stamp{}
+	fast := false
 	for _, d := range docs {
 		if d.path != "" {
 			files[d.path] = d.stamp
 		}
+		fast = fast || d.tail != nil
 	}
 	w.mu.Lock()
+	w.fast = fast
 	if !maps.Equal(files, w.files) {
 		w.files = files
 	}
@@ -47,10 +51,14 @@ func (w *watcher) sync(docs []*doc) {
 }
 
 func (w *watcher) run(wake func()) {
-	for range time.Tick(time.Second) {
+	for {
 		w.mu.Lock()
-		files := w.files
+		files, wait := w.files, time.Second
+		if w.fast {
+			wait = tailPoll
+		}
 		w.mu.Unlock()
+		time.Sleep(wait)
 		for p, s := range files {
 			if statStamp(p) != s {
 				w.hit.Store(true)
@@ -82,7 +90,9 @@ func (e *Editor) checkDisk() {
 			}
 			e.fillDir(d, d.path, focus)
 		case !st.ok:
-			if cur {
+			if d.tail != nil {
+				d.tail.gone = true // a rotation; it comes back
+			} else if cur {
 				e.flash("file was deleted on disk", true)
 			}
 		case d.buf.Dirty():
@@ -90,6 +100,8 @@ func (e *Editor) checkDisk() {
 			if cur {
 				e.flash("file changed on disk · ⌘S twice overwrites it", true)
 			}
+		case d.tail != nil:
+			d.tail.size, d.tail.check, d.tail.gone = st.size, true, false
 		default:
 			e.reload(d)
 			if cur {

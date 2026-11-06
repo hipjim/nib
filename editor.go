@@ -1023,7 +1023,11 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 				e.openReplace()
 			}
 		case "T":
-			e.openTerminal()
+			if shift {
+				e.toggleTail()
+			} else {
+				e.openTerminal()
+			}
 		case "G":
 			if shift {
 				e.openFilter()
@@ -1145,7 +1149,9 @@ func (e *Editor) key(gtx layout.Context, k key.Event, discardOK bool) {
 			e.home(shift)
 		}
 	case key.NameEnd:
-		if m.Contain(key.ModShortcut) {
+		if e.tail != nil && !shift && !e.following(e.doc) {
+			e.moveTo(e.buf.End(), false) // back to following
+		} else if m.Contain(key.ModShortcut) {
 			e.moveTo(e.buf.End(), shift)
 		} else {
 			e.moveTo(Pos{e.cursor.Line, len(e.buf.Line(e.cursor.Line))}, shift)
@@ -1437,13 +1443,21 @@ func (e *Editor) Layout(gtx layout.Context) (dims layout.Dimensions) {
 		gtx.Execute(key.FocusCmd{Tag: e})
 	}
 	e.events(gtx)
+	if e.stepTails() {
+		gtx.Execute(op.InvalidateCmd{})
+	}
 	e.applyPending()
 	e.stepSearch()
 	if e.prompt == promptFilter {
-		if f := &e.filter; f.buf != e.buf || f.version != e.buf.version {
+		f := &e.filter
+		switch {
+		case f.buf != e.buf || f.version != e.buf.version && e.buf.version-f.version != e.buf.appends-f.appends:
 			f.start(e.buf, f.q, e.opts)
+		case f.version != e.buf.version:
+			f.grew()
 		}
-		e.filter.step()
+		f.tail = e.tail != nil
+		f.step()
 	}
 	e.cursor, e.anchor = e.buf.Clamp(e.cursor), e.buf.Clamp(e.anchor)
 	e.updateTitle()
@@ -1558,6 +1572,17 @@ func (e *Editor) drawText(gtx layout.Context, width, height, gutterW int) {
 
 	body := clip.Rect(image.Rect(gutterW, 0, width, height)).Push(gtx.Ops)
 	defer body.Pop()
+
+	if e.drawArrivals(gtx.Now, func(from, to int, strength float32) {
+		from, to = max(from, first), min(to, last+1)
+		if from < to {
+			c := colAccent
+			c.A = uint8(14 * strength) // blending is linear, so a little goes a long way
+			fill(gtx, image.Rect(gutterW, from*lh-sy, width, to*lh-sy), c)
+		}
+	}) {
+		gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(50 * time.Millisecond)})
+	}
 
 	v0 := int(e.scrollX / e.charW)
 	v1 := v0 + int(float32(e.viewW)/e.charW) + 2
@@ -1799,6 +1824,17 @@ func (e *Editor) drawStatus(gtx layout.Context, r image.Rectangle) {
 		rx = r.Max.X - pad - int(float32(utf8.RuneCountInString(right))*cw)
 	}
 	e.label(gtx, rx, y, right, colInfo)
+	if e.tail != nil && (e.prompt == promptNone || e.prompt == promptFilter) {
+		s, on, warn := e.tailStatus()
+		c := colInfo
+		if on {
+			c = colAccent
+		} else if warn {
+			c = colWarn
+		}
+		rx -= int(float32(utf8.RuneCountInString(s)+2) * cw)
+		e.label(gtx, rx, y, s, c)
+	}
 
 	x := r.Min.X + pad
 	if e.prompt != promptNone {

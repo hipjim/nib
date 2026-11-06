@@ -51,6 +51,7 @@ func (e *Editor) commands() []command {
 		{"find", "⌘F", func(e *Editor, gtx layout.Context) { e.key(gtx, keyEvent("F"), false) }},
 		{"replace", "⌘R", func(e *Editor, _ layout.Context) { e.openReplace() }},
 		{"filter the lines of this file", "⌘⇧G", func(e *Editor, _ layout.Context) { e.openFilter() }},
+		{"tail the file " + onOff(e.tail != nil) + ", following what is added", "⌘⇧T", func(e *Editor, _ layout.Context) { e.toggleTail() }},
 		{"regular expressions " + onOff(e.opts.regex), "⌘⇧R", func(e *Editor, _ layout.Context) { e.opts.regex = !e.opts.regex }},
 		{"exact case in find " + onOff(e.opts.exact), "⌘⇧C, finding", func(e *Editor, _ layout.Context) { e.opts.exact = !e.opts.exact }},
 		{"whole words in find " + onOff(e.opts.word), "⌘⇧W, finding", func(e *Editor, _ layout.Context) { e.opts.word = !e.opts.word }},

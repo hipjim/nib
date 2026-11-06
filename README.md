@@ -34,8 +34,9 @@ one ~10 MB binary for macOS, Linux and Windows.
   a folder, syntax highlighting, folder browsing and a fuzzy file finder, with
   the keys you already know.
 - **Never loses work.** It asks before quitting with unsaved files, restores
-  your last session, and reloads files that change on disk, following
-  growing logs like `tail -f`.
+  your last session, and reloads files that change on disk.
+- **Follows logs.** `⌘⇧T` tails a file by reading only what was added, through
+  rotations, with the line filter as a live `tail -f | grep`.
 
 ## Install
 
@@ -174,8 +175,14 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
   restored file you do not touch for two sessions in a row is dropped, so a
   file opened once by accident does not come back forever.
 - Files that change on disk reload by themselves. With the cursor on the last
-  line, nib follows new lines like `tail -f`. A file you have edited is never
-  replaced, and saving over a newer version on disk asks first.
+  line, nib stays on the last line. A file you have edited is never replaced,
+  and saving over a newer version on disk asks first.
+- **`⌘⇧T`** tails a file, or `nib -f app.log` from the start. It reads only the
+  bytes added, four times a second, so following a 2 GB log costs the same as a
+  small one. New lines are tinted for a moment. Scrolling up or clicking a line
+  pauses it, and the status bar counts the lines that came in; `End` goes back.
+  It carries on through a log rotation or truncation, and `⌘⇧G` becomes a live
+  `tail -f | grep`, keeping the latest 10,000 lines.
 
 ## Keys
 
@@ -186,6 +193,7 @@ same in a 2 GB file as in a 2 KB one. `⌘⇧H` turns it off.
 | `⌘S` / `⌘⇧S` | save / save as |
 | `⌘P` or `⇧⇧` | find a file in the folder (`↑` / `↓` pick, `Enter` opens) |
 | `⌘⇧P` | run any command by name (`↑` / `↓` pick, `Enter` runs) |
+| `⌘⇧T` | tail the file: follow what is added to it (`End` resumes after scrolling away) |
 | `⌘⇧G` | list the lines of this file that match (`↑` / `↓` pick, `Enter` goes there) |
 | `⌘⇧R` / `⌘⇧C` / `⌘⇧W` | while finding: regular expression / exact case / whole word |
 | `⌘O` / `⌘⇧O` | browse the file's folder / open a path (`Tab` completes) |
